@@ -1,0 +1,201 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  // output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+// schema.prisma
+
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  password  String
+  role      UserRole  @default(USER)
+  firstName String?
+  lastName  String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Relations
+  employee Employee?
+  owner    Owner?
+  tenant   Tenant?
+
+  // Store the HASHED refresh token
+  hashedRefreshToken String?
+}
+
+model Employee {
+  id          Int        @id @default(autoincrement())
+  userId      Int        @unique // Type inferred as Int
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position    String
+  phoneNumber String?
+  hireDate    DateTime   @default(now())
+
+  // Relations avec les propriétés gérées
+  managedProperties Property[] @relation("ManagedProperties") // Added relation name
+  managedContracts Contract[] @relation("ManagedContracts") // Added relation name
+}
+
+model Owner {
+  id          Int        @id @default(autoincrement())
+  userId      Int        @unique // Type inferred as Int
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneNumber String?
+
+  // Relations
+  properties Property[]
+}
+
+model Tenant {
+  id          Int        @id @default(autoincrement())
+  userId      Int        @unique // Type inferred as Int
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneNumber String?
+
+  // Relations
+  contracts Contract[]
+  payments  Payment[]
+}
+
+model Property {
+  id          Int            @id @default(autoincrement())
+  ownerId     Int            // Type inferred as Int
+  owner       Owner          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  managerId   Int?           // Type inferred as Int
+  manager     Employee?      @relation("ManagedProperties", fields: [managerId], references: [id], onDelete: SetNull) // Added relation name, onDelete
+
+  address     String
+  type        PropertyType
+  description String?
+  rentAmount  Float
+  charges     Float
+  status      PropertyStatus @default(AVAILABLE)
+
+  // Relations
+  contracts Contract[]
+  expenses  Expense[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model Contract {
+  id          Int            @id @default(autoincrement())
+  propertyId  Int            // Type inferred as Int
+  property    Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenantId    Int            // Type inferred as Int
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict) // Changed onDelete to Restrict
+  managerId   Int            // Type inferred as Int
+  manager     Employee       @relation("ManagedContracts", fields: [managerId], references: [id], onDelete: Restrict) // Added relation name, onDelete
+
+  startDate   DateTime
+  endDate     DateTime?
+  rentAmount  Float
+  depositAmount Float
+  status      ContractStatus @default(ACTIVE)
+
+  // Relations
+  payments  Payment[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+}
+
+model Payment {
+  id         Int           @id @default(autoincrement())
+  contractId Int           // Type inferred as Int
+  contract   Contract      @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  tenantId   Int           // Type inferred as Int
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict) // Changed onDelete to Restrict
+
+  amount     Float
+  type       PaymentType
+  status     PaymentStatus @default(PENDING)
+  dueDate    DateTime
+  paidDate   DateTime?
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model Expense {
+  id         Int           @id @default(autoincrement())
+  propertyId Int           // Type inferred as Int
+  property   Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  amount      Float
+  description String
+  date        DateTime
+  type        ExpenseType
+  status      ExpenseStatus @default(PENDING)
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+// --- Enums remain the same ---
+enum UserRole {
+  ADMIN
+  EMPLOYEE
+  OWNER
+  TENANT
+  USER // Keep a general USER role or adjust logic if needed
+}
+
+enum PropertyType {
+  HOUSE
+  APARTMENT
+  COMMERCIAL
+  LAND
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  RENTED
+  MAINTENANCE
+  UNAVAILABLE
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  TERMINATED
+  EXPIRED
+}
+
+enum PaymentType {
+  RENT
+  DEPOSIT
+  CHARGES
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  LATE
+  CANCELLED
+}
+
+enum ExpenseType {
+  MAINTENANCE
+  REPAIR
+  TAXES
+  INSURANCE
+  UTILITIES
+  OTHER
+}
+
+enum ExpenseStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
