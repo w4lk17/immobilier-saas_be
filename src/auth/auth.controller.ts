@@ -32,7 +32,10 @@ export class AuthController {
   async register(
     @Body() createUserDto: CreateUserDto,
   ): Promise<Omit<User, 'password' | 'hashedRefreshToken'>> {
-    console.log('Register controller: Attempting registration for:', createUserDto.email);
+    console.log(
+      'Register controller: Attempting registration for:',
+      createUserDto.email,
+    );
     // Password validation (e.g., confirm password) could be added in the DTO or here if needed
     const newUser = await this.authService.register(createUserDto);
     // Return the newly created user data (without sensitive fields)
@@ -90,6 +93,12 @@ export class AuthController {
     // req.user contains the payload validated by JwtStrategy
     console.log(`Profile requested by user ${user.id}`);
     // Return only necessary, non-sensitive data
-    return { userId: user.sub = user.id, email: user.email, role: user.role };
+    return {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName
+    };
   }
 }

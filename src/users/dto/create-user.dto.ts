@@ -4,7 +4,6 @@ import {
   IsOptional,
   MinLength,
   IsEnum,
-  IsInt,
 } from 'class-validator';
 import { UserRole } from '@prisma/client';
 

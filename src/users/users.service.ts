@@ -139,6 +139,7 @@ export class UsersService {
       const deletedUser = await this.prisma.user.delete({
         where: { id },
       });
+      console.log(`User ${id} removed successfully`);
       return this.selectSecureUserData(deletedUser);
     } catch (error) {
       if (error.code === 'P2025') {
