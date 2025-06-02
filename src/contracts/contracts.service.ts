@@ -105,7 +105,11 @@ export class ContractsService {
   async findAll(user: JwtPayload): Promise<Contract[]> {
     // Base query
     const queryArgs: any = {
-      include: { property: true, tenant: true, manager: true },
+      include: {
+        property: true,
+        tenant: { include: { user: true } },
+        manager: { include: { user: true } },
+      },
     };
 
     // Filter based on role

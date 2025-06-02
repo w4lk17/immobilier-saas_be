@@ -63,7 +63,10 @@ export class PaymentsService {
 
   async findAll(user: JwtPayload): Promise<Payment[]> {
     const queryArgs: any = {
-      include: { contract: { include: { property: true } }, tenant: true },
+      include: {
+        contract: { include: { property: true } },
+        tenant: { include: { user: true } },
+      },
     };
 
     // Filter based on role

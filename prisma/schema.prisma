@@ -89,6 +89,8 @@ model Property {
   updatedAt DateTime       @updatedAt
 }
 
+// TODO: Add a model for the rental (Locative)
+
 model Contract {
   id          Int            @id @default(autoincrement())
   propertyId  Int            // Type inferred as Int
@@ -142,7 +144,7 @@ model Expense {
   updatedAt DateTime      @updatedAt
 }
 
-// --- Enums remain the same ---
+// --- Enums ---
 enum UserRole {
   ADMIN
   EMPLOYEE
@@ -165,6 +167,11 @@ enum PropertyStatus {
   UNAVAILABLE
 }
 
+// TODO: Add a type for the rental (Palier, Villa, Appartement, Studio, Magasin)
+// TODO: Add a status for the rental (Occupé, Disponible, En maintenance)
+
+// TODO: Add a type for Contract Type (contrat de bail Habitation, contrat de bail commercial, etc.)
+
 enum ContractStatus {
   DRAFT
   ACTIVE
@@ -173,9 +180,9 @@ enum ContractStatus {
 }
 
 enum PaymentType {
-  RENT
-  DEPOSIT
-  CHARGES
+  RENT    // Loyer
+  DEPOSIT // Caution + Avance Loyer
+  CHARGES // Charges
 }
 
 enum PaymentStatus {

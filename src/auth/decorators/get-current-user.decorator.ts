@@ -1,5 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { JwtPayload, JwtPayloadWithRt } from '../types';
+import { JwtPayloadWithRt } from '../types';
 
 // Decorator to get specific field from user payload (e.g., userId)
 export const GetCurrentUser = createParamDecorator(
