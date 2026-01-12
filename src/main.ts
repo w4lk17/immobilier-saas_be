@@ -1,12 +1,10 @@
-import { NestFactory, Reflector } from '@nestjs/core';
+import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import {
   ValidationPipe,
-  ClassSerializerInterceptor,
   Logger,
 } from '@nestjs/common';
-import * as cookieParser from 'cookie-parser';
-import { JwtAuthGuard } from './auth/guards/jwt-auth.guard'; // Adjust path
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
