@@ -191,14 +191,14 @@ export class AuthService {
     // Set Access Token Cookie
     response.cookie('accessToken', tokens.accessToken, {
       ...cookieOptions,
-      maxAge: this.configService.get<number>('JWT_ACCESS_EXPIRATION'), //15 * 60 * 1000, // 15 minutes
+      maxAge: 15 * 60 * 1000, //this.configService.get<number>('JWT_ACCESS_EXPIRATION'), // 15 minutes
     });
 
     // Set Refresh Token Cookie
     response.cookie('refreshToken', tokens.refreshToken, {
       ...cookieOptions,
       path: '/api/auth', // Only send RT cookie to auth endpoints
-      maxAge: this.configService.get<number>('JWT_REFRESH_EXPIRATION'),
+      maxAge: 7 * 24 * 60 * 60 * 1000, //this.configService.get<number>('JWT_REFRESH_EXPIRATION'), // 7 days
     });
   }
 
