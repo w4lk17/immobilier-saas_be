@@ -23,7 +23,7 @@ export class AuthService {
     private usersService: UsersService, // Use UsersService for user operations
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) {}
+  ) { }
 
   async validateUser(email: string, pass: string): Promise<User | null> {
     const user = await this.usersService.findByEmail(email);
@@ -43,7 +43,9 @@ export class AuthService {
     try {
       // We directly call the UsersService.create which returns the secure user data
       const newUser = await this.usersService.create(createUserDto);
-      console.log(`AuthService: User ${createUserDto.email} registered successfully`);
+      console.log(
+        `AuthService: User ${createUserDto.email} registered successfully`,
+      );
       // We don't automatically log in the user here, just return the created user info
       return newUser;
     } catch (error) {
@@ -170,29 +172,44 @@ export class AuthService {
   }
 
   private _setCookies(response: any, tokens: Tokens): void {
-    const isProduction = this.configService.get('NODE_ENV') === 'production';
+    const env = this.configService.get('NODE_ENV');
+
+    // 1. If we are on Vercel, it's 'production'. 
+    // 2. Since your frontend is on Localhost and backend on Vercel,
+    //    we MUST use 'none' and 'secure'.
+    const isVercelDeployment = env === 'production';
+
+    const cookieOptions = {
+      httpOnly: true,
+      // On Vercel (HTTPS), we use true. On local PC (HTTP), we use false.
+      secure: isVercelDeployment,
+      // On Vercel (Cross-site), we use 'none'. On local PC, 'lax' is fine.
+      sameSite: isVercelDeployment ? ('none' as const) : ('lax' as const),
+      path: '/',
+    };
 
     // Set Access Token Cookie
     response.cookie('accessToken', tokens.accessToken, {
-      httpOnly: true, // Prevent JS access
-      secure: isProduction, // Use secure in production (HTTPS)
-      sameSite: isProduction ? 'strict' : 'lax', // Adjust as needed
-      path: '/', // Cookie available site-wide
-      // expires: new Date(...) // Or use maxAge based on JWT expiration
+      ...cookieOptions,
+      maxAge: this.configService.get<number>('JWT_ACCESS_EXPIRATION'), //15 * 60 * 1000, // 15 minutes
     });
 
     // Set Refresh Token Cookie
     response.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      ...cookieOptions,
       path: '/api/auth', // Only send RT cookie to auth endpoints
-      // expires: new Date(...) // Or use maxAge based on JWT expiration
+      maxAge: this.configService.get<number>('JWT_REFRESH_EXPIRATION'),
     });
   }
 
   private _clearCookies(response: any): void {
-    response.clearCookie('accessToken', { path: '/' });
-    response.clearCookie('refreshToken', { path: '/api/auth' }); // Match path used in set
+    const clearOptions = {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none' as const,
+    };
+
+    response.clearCookie('accessToken', { ...clearOptions, path: '/' });
+    response.clearCookie('refreshToken', { ...clearOptions, path: '/api/auth' });
   }
 }
