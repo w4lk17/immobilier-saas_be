@@ -17,13 +17,13 @@ export class LocalStrategy extends PassportStrategy(Strategy, 'local') {
     email: string,
     pass: string,
   ): Promise<Omit<User, 'password' | 'hashedRefreshToken'>> {
-    console.log(`LocalStrategy: Validating user ${email}`);
+    // console.log(`LocalStrategy: Validating user ${email}`);
     const user = await this.authService.validateUser(email, pass);
     if (!user) {
-      console.log(`LocalStrategy: Validation failed for ${email}`);
+      // console.log(`LocalStrategy: Validation failed for ${email}`);
       throw new UnauthorizedException('Invalid credentials');
     }
-    console.log(`LocalStrategy: Validation successful for ${email}`);
+    // console.log(`LocalStrategy: Validation successful for ${email}`);
     // Passport automatically creates a user property on the request object
     // Remove password before returning
     const { password, hashedRefreshToken, ...result } = user;
