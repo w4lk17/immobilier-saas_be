@@ -1,12 +1,4 @@
-import {
-  IsString,
-  IsOptional,
-  IsInt,
-  IsEnum,
-  IsNumber,
-  Min,
-  IsNotEmpty,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsEnum, IsOptional, IsInt } from 'class-validator';
 import { PropertyType, PropertyStatus } from '@prisma/client';
 
 export class CreatePropertyDto {
@@ -14,33 +6,27 @@ export class CreatePropertyDto {
   @IsNotEmpty()
   ownerId: number;
 
-  @IsOptional()
   @IsInt()
-  managerId?: number; // Employee ID
+  @IsOptional()
+  managerId?: number;
 
   @IsString()
   @IsNotEmpty()
   address: string;
 
+  @IsString()
+  @IsOptional()
+  description?: string;
+
   @IsEnum(PropertyType)
   @IsNotEmpty()
   type: PropertyType;
 
-  @IsOptional()
-  @IsString()
-  description?: string;
-
   @IsNumber()
-  @Min(0)
   @IsNotEmpty()
-  rentAmount: number;
+  propertyValue: number;
 
-  @IsNumber()
-  @Min(0)
-  @IsNotEmpty()
-  charges: number;
-
-  @IsOptional()
   @IsEnum(PropertyStatus)
-  status?: PropertyStatus; // Defaults to AVAILABLE
+  @IsOptional()
+  status?: PropertyStatus;
 }

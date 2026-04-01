@@ -1,14 +1,24 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateUserDto } from './create-user.dto';
-import { IsOptional, IsString } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsEnum } from 'class-validator';
+import { UserRole } from '@prisma/client';
 
-// Exclude password/email changes from basic update or handle carefully
-export class UpdateUserDto extends PartialType(CreateUserDto) {
-  @IsOptional()
+export class UpdateUserDto {
   @IsString()
-  password?: string; // Handle password update separately in service (hashing!)
+  @IsOptional()
+  firstName?: string;
 
-  @IsOptional()
   @IsString()
-  hashedRefreshToken?: string; // Only allow internal updates via AuthService
+  @IsOptional()
+  lastName?: string;
+
+  @IsString()
+  @IsOptional()
+  phoneNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  address?: string;
+
+  // L'admin seul peut changer le rôle via ce DTO, 
+  // mais il vaut mieux une route dédiée ou un control strict dans le service.
+  // Pour la sécurité, on peut l'exclure ici et le gérer ailleurs.
 }

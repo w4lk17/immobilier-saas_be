@@ -3,144 +3,294 @@ import {
   NotFoundException,
   ConflictException,
   InternalServerErrorException,
+  ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
-import { Employee, UserRole } from '@prisma/client';
+import { UpdateStatusDto } from '../common/dto/update-status.dto';
+import { UserRole } from '@prisma/client';
+import { JwtPayload } from '../auth/types';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class EmployeesService {
   constructor(private prisma: PrismaService) { }
 
-  // Helper to exclude sensitive User data if included
-  private formatEmployeeResponse(employee: Employee & { user?: any }): any {
+  // Helper pour nettoyer la réponse (retirer le mot de passe)
+  private formatEmployeeResponse(employee: any) {
+    if (!employee) return null;
+    // L'objet user est inclus via les relations
     if (employee.user) {
-      const { password, hashedRefreshToken, ...secureUser } = employee.user;
+      const { password, refreshToken, ...secureUser } = employee.user;
       return { ...employee, user: secureUser };
     }
     return employee;
   }
 
-  async create(createEmployeeDto: CreateEmployeeDto): Promise<any> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: createEmployeeDto.userId },
+  // ==========================================
+  // CREATE (Admin seulement)
+  // ==========================================
+  async create(dto: CreateEmployeeDto): Promise<any> {
+    // 1. Vérifier unicité email
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: dto.email },
     });
-    if (!user) {
-      throw new NotFoundException(
-        `User with ID "${createEmployeeDto.userId}" not found.`,
-      );
-    }
-    // Check if user already linked
-    const existingEmployee = await this.prisma.employee.findUnique({
-      where: { userId: createEmployeeDto.userId },
-    });
-    if (existingEmployee) {
-      throw new ConflictException(
-        `User with ID "${createEmployeeDto.userId}" is already linked to an employee profile.`,
-      );
+    if (existingUser) {
+      throw new ConflictException('Un utilisateur avec cet email existe déjà.');
     }
 
+    // 2. Hasher le mot de passe
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+
     try {
-      // Start transaction to create employee and update user role
-      const newEmployee = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.employee.create({
-          data: createEmployeeDto,
-          include: { user: true },
-        });
-        // Update user role to EMPLOYEE
-        await tx.user.update({
-          where: { id: createEmployeeDto.userId },
-          data: { role: UserRole.EMPLOYEE },
-        });
-        return created;
+      // 3. Création Transactionnelle (User + Employee)
+      const newEmployee = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          password: hashedPassword,
+          role: UserRole.MANAGER, // Rôle forcé
+          // Champs communs User
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          phoneNumber: dto.phoneNumber,
+          address: dto.address,
+          civility: dto.civility,
+          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
+          workPlace: dto.workPlace,
+          occupation: dto.occupation,
+          identityDocumentNumber: dto.identityDocumentNumber,
+          identityDocumentType: dto.identityDocumentType,
+          identityDeliveryCity: dto.identityDeliveryCity,
+          identityDeliveryDate: dto.identityDeliveryDate ? new Date(dto.identityDeliveryDate) : null,
+          identityExpiryDate: dto.identityExpiryDate ? new Date(dto.identityExpiryDate) : null,
+          pacLastName: dto.pacLastName,
+          pacFirstName: dto.pacFirstName,
+          pacPhoneNumber: dto.pacPhoneNumber,
+
+          // Création profil Employee imbriqué
+          employeeProfile: {
+            create: {
+              position: dto.position,
+              employmentType: dto.employmentType,
+              hireDate: dto.hireDate ? new Date(dto.hireDate) : new Date(),
+              terminationDate: dto.terminationDate ? new Date(dto.terminationDate) : null,
+            },
+          },
+        },
+        include: {
+          employeeProfile: true,
+        },
       });
-      return this.formatEmployeeResponse(newEmployee);
+
+      // On retourne l'objet structuré comme attendu (Employee avec user imbriqué)
+      // Prisma renvoie User, on doit reformater un peu pour que ça ressemble à un objet Employee
+      const { employeeProfile, ...userData } = newEmployee;
+      return this.formatEmployeeResponse({
+        ...employeeProfile,
+        user: userData,
+      });
+
     } catch (error) {
       console.error('Error creating employee:', error);
-      throw new InternalServerErrorException(
-        'Could not create employee profile.',
-      );
+      throw new InternalServerErrorException("Erreur lors de la création de l'employé");
     }
   }
 
+  // ==========================================
+  // FIND ALL (Admin seulement)
+  // ==========================================
   async findAll(): Promise<any[]> {
     const employees = await this.prisma.employee.findMany({
-      include: { user: true }, // Selectively include user, excluding sensitive fields later
+      include: {
+        user: true,
+      },
+      orderBy: {
+        user: {
+          createdAt: 'desc',
+        },
+      },
     });
     return employees.map(this.formatEmployeeResponse);
   }
 
-  async findOne(id: number): Promise<any> {
+  // ==========================================
+  // FIND ONE (Admin ou Self)
+  // ==========================================
+  async findOne(id: number, currentUser: JwtPayload): Promise<any> {
     const employee = await this.prisma.employee.findUnique({
       where: { id },
       include: {
-        user: true, // Include user details
-        managedProperties: false, // Set to true if needed by default
-        managedContracts: false, // Set to true if needed by default
+        user: true,
+        managedProperties: { select: { id: true, address: true } },
+        managedContracts: { select: { id: true, status: true } },
       },
     });
+
     if (!employee) {
-      throw new NotFoundException(`Employee with ID "${id}" not found`);
+      throw new NotFoundException(`Employé avec l'ID "${id}" introuvable.`);
     }
+
+    // Droit d'accès : Admin OU c'est son propre profil
+    const isOwner = employee.userId === currentUser.sub;
+    if (currentUser.role !== UserRole.ADMIN && !isOwner) {
+      throw new ForbiddenException("Vous n'avez pas accès à ce profil.");
+    }
+
     return this.formatEmployeeResponse(employee);
   }
 
-  async update(id: number, updateEmployeeDto: UpdateEmployeeDto): Promise<any> {
-    // Find the employee first to ensure it exists
-    const existing = await this.prisma.employee.findUnique({ where: { id } });
-    if (!existing) {
-      throw new NotFoundException(`Employee with ID "${id}" not found`);
-    }
-    try {
-      const updatedEmployee = await this.prisma.employee.update({
-        where: { id },
-        data: updateEmployeeDto,
-        include: { user: true },
-      });
-      return this.formatEmployeeResponse(updatedEmployee);
-    } catch (error) {
-      console.error('Error updating employee:', error);
-      // Handle specific prisma errors if necessary
-      throw new InternalServerErrorException(
-        'Could not update employee profile.',
-      );
-    }
-  }
-
-  async remove(id: number): Promise<any> {
-    // Check existence first
-    const existing = await this.prisma.employee.findUnique({
+  // ==========================================
+  // UPDATE (Admin ou Self avec restrictions)
+  // ==========================================
+  async update(id: number, dto: UpdateEmployeeDto, currentUser: JwtPayload): Promise<any> {
+    const employee = await this.prisma.employee.findUnique({
       where: { id },
       include: { user: true },
     });
-    if (!existing) {
-      throw new NotFoundException(`Employee with ID "${id}" not found.`);
+
+    if (!employee) {
+      throw new NotFoundException(`Employé avec l'ID "${id}" introuvable.`);
     }
-    // Consider implications: managedProperties/Contracts have onDelete: SetNull/Restrict
-    // Deleting the employee might be blocked by Contracts or set managerId to null on Properties
+
+    // 1. Vérification des droits
+    const isAdmin = currentUser.role === UserRole.ADMIN;
+    const isSelf = employee.userId === currentUser.sub;
+
+    if (!isAdmin && !isSelf) {
+      throw new ForbiddenException('Action non autorisée.');
+    }
+
+    // 2. Préparation des données
+    const userData: any = {};
+    const employeeData: any = {};
+
+    // Séparation des champs User vs Employee
+    // Champs User (communs)
+    if (dto.firstName) userData.firstName = dto.firstName;
+    if (dto.lastName) userData.lastName = dto.lastName;
+    if (dto.phoneNumber) userData.phoneNumber = dto.phoneNumber;
+    if (dto.address) userData.address = dto.address;
+    if (dto.civility) userData.civility = dto.civility;
+    if (dto.dateOfBirth) userData.dateOfBirth = new Date(dto.dateOfBirth);
+    // ... autres champs communs ...
+
+    // Champs Employee (Restreints pour l'auto-mise à jour)
+    // Un employé ne peut pas changer son poste lui-même
+    if (isAdmin) {
+      if (dto.position) employeeData.position = dto.position;
+      if (dto.employmentType) employeeData.employmentType = dto.employmentType;
+      if (dto.hireDate) employeeData.hireDate = new Date(dto.hireDate);
+      if (dto.terminationDate) employeeData.terminationDate = new Date(dto.terminationDate);
+    }
+
+    // Si ce n'est pas un admin, on s'assure qu'il n'essaie pas de modifier des champs pro
+    if (!isAdmin && (dto.position || dto.employmentType)) {
+      throw new ForbiddenException("Vous ne pouvez pas modifier vos informations professionnelles.");
+    }
+
     try {
-      // Reset user role back to USER? Or handle differently?
-      await this.prisma.$transaction(async (tx) => {
-        await tx.employee.delete({ where: { id } });
-        // Optionally update the user's role back
-        await tx.user.update({
-          where: { id: existing.userId },
-          data: { role: UserRole.USER }, // Or handle differently
+      // Transaction de mise à jour
+      const updated = await this.prisma.$transaction(async (tx) => {
+        // Update User si nécessaire
+        if (Object.keys(userData).length > 0) {
+          await tx.user.update({
+            where: { id: employee.userId },
+            data: userData,
+          });
+        }
+        // Update Employee si nécessaire
+        if (Object.keys(employeeData).length > 0) {
+          return await tx.employee.update({
+            where: { id },
+            data: employeeData,
+            include: { user: true },
+          });
+        }
+        // Si seul l'user a changé, on retourne l'employé avec l'user frais
+        return await tx.employee.findUnique({
+          where: { id },
+          include: { user: true }
         });
       });
-      return this.formatEmployeeResponse(existing); // Return the deleted data
+
+      return this.formatEmployeeResponse(updated);
+    } catch (error) {
+      console.error('Error updating employee:', error);
+      throw new InternalServerErrorException('Erreur lors de la mise à jour.');
+    }
+  }
+
+  // ==========================================
+  // UPDATE STATUS (Admin seulement)
+  // ==========================================
+  async updateStatus(id: number, dto: UpdateStatusDto): Promise<any> {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+    });
+
+    if (!employee) {
+      throw new NotFoundException(`Employé avec l'ID "${id}" introuvable.`);
+    }
+
+    try {
+      // On met à jour le statut sur l'UTILISATEUR lié
+      const updatedUser = await this.prisma.user.update({
+        where: { id: employee.userId },
+        data: { isActive: dto.isActive },
+        include: { employeeProfile: true }, // Pour retourner l'objet complet
+      });
+
+      // On reformatte pour la réponse
+      const { employeeProfile, ...userFields } = updatedUser;
+      return this.formatEmployeeResponse({
+        ...employeeProfile,
+        user: userFields
+      });
+
+    } catch (error) {
+      console.error('Error updating status:', error);
+      throw new InternalServerErrorException('Erreur lors du changement de statut.');
+    }
+  }
+
+  // ==========================================
+  // REMOVE (Admin seulement)
+  // ==========================================
+  async remove(id: number): Promise<any> {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+      include: { user: true },
+    });
+
+    if (!employee) {
+      throw new NotFoundException(`Employé avec l'ID "${id}" introuvable.`);
+    }
+
+    try {
+      // Stratégie : On supprime le profil employé, et on rétrograde l'utilisateur au rôle USER
+      await this.prisma.$transaction(async (tx) => {
+        // 1. Supprimer le profil Employee
+        await tx.employee.delete({ where: { id } });
+
+        // 2. Mettre à jour le rôle de l'User
+        await tx.user.update({
+          where: { id: employee.userId },
+          data: { role: UserRole.USER },
+        });
+      });
+
+      return { message: `Profil employé ${id} supprimé. L'utilisateur a été rétrogradé.` };
     } catch (error) {
       console.error('Error removing employee:', error);
+      // Gestion erreur FK (si l'employé est manager sur des contrats)
       if (error.code === 'P2003') {
-        // Foreign key constraint (likely from Contract)
-        throw new ConflictException(
-          `Cannot delete employee with ID "${id}" as they are linked to existing contracts.`,
+        throw new BadRequestException(
+          "Impossible de supprimer cet employé car il est référencé sur des contrats ou propriétés actifs.",
         );
       }
-      throw new InternalServerErrorException(
-        `Could not delete employee profile.`,
-      );
+      throw new InternalServerErrorException('Erreur lors de la suppression.');
     }
   }
 }

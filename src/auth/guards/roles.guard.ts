@@ -7,7 +7,6 @@ import {
 import { Reflector } from '@nestjs/core';
 import { UserRole } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { JwtPayload } from '../types';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -41,11 +40,11 @@ export class RolesGuard implements CanActivate {
     const hasRequiredRole = requiredRoles.some((role) => user.role === role);
 
     if (!hasRequiredRole) {
-      console.warn(
-        `RolesGuard: User with role '<span class="math-inline">\{user\.role\}' does not have required roles\: \[</span>{requiredRoles.join(', ')}]`,
-      );
+      const roleList = requiredRoles.join(', ');
+      const errorMsg = `RolesGuard: Access denied. User with role '${user.role}' is missing required role(s): [${roleList}].`;
+      console.warn(errorMsg);
       throw new ForbiddenException(
-        `You do not have the required permissions (${requiredRoles.join(', ')}) to access this resource.`,
+        `Access denied: your role '${user.role}' does not grant sufficient permissions. Required role(s): [${roleList}].`
       );
     }
 

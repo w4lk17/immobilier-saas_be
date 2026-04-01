@@ -18,10 +18,10 @@ import { JwtPayload } from '../auth/types';
 
 @Controller('contracts')
 export class ContractsController {
-  constructor(private readonly contractsService: ContractsService) {}
+  constructor(private readonly contractsService: ContractsService) { }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE) // Admin or Employee (manager) can create
+  @Roles(UserRole.ADMIN, UserRole.MANAGER) // Admin or Employee (manager) can create
   create(
     @Body() createContractDto: CreateContractDto,
     @GetCurrentUser() user: JwtPayload,
@@ -30,14 +30,12 @@ export class ContractsController {
   }
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE, UserRole.OWNER, UserRole.TENANT) // Allow broader view access
   findAll(@GetCurrentUser() user: JwtPayload) {
     // Service filters results based on user role
     return this.contractsService.findAll(user);
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE, UserRole.OWNER, UserRole.TENANT) // Allow broader view access
   findOne(
     @Param('id', ParseIntPipe) id: number,
     @GetCurrentUser() user: JwtPayload,
@@ -47,7 +45,7 @@ export class ContractsController {
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE) // Only Admin or Manager can update
+  @Roles(UserRole.ADMIN, UserRole.MANAGER) // Only Admin or Manager can update
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateContractDto: UpdateContractDto,
@@ -56,8 +54,17 @@ export class ContractsController {
     return this.contractsService.update(id, updateContractDto, user);
   }
 
+  @Patch(':id/terminate')
+  @Roles(UserRole.ADMIN, UserRole.MANAGER) // ADMIN and MANAGER can terminate
+  async terminate(
+    @Param('id', ParseIntPipe) id: number,
+    @GetCurrentUser() user: JwtPayload,
+  ) {
+    return this.contractsService.terminate(id, user);
+  }
+
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE) // Only Admin or Manager can delete
+  @Roles(UserRole.ADMIN) // Only Admin can delete
   remove(
     @Param('id', ParseIntPipe) id: number,
     @GetCurrentUser() user: JwtPayload,

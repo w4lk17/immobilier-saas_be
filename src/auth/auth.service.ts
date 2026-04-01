@@ -1,20 +1,19 @@
 import {
   Injectable,
   ForbiddenException,
-  UnauthorizedException,
   InternalServerErrorException,
   ConflictException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
-import { User } from '@prisma/client';
+import { User, UserRole } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { Tokens, JwtPayload } from './types';
-import { CreateUserDto } from '../users/dto/create-user.dto';
-import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
+import { Response } from 'express';
 
 @Injectable()
 export class AuthService {
@@ -29,43 +28,39 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
 
     if (user && (await bcrypt.compare(pass, user.password))) {
-      // Password matches, return the FULL user object
       return user;
     }
     return null;
   }
 
-  async register(
-    createUserDto: CreateUserDto,
-  ): Promise<Omit<User, 'password' | 'hashedRefreshToken'>> {
-    // UsersService.create handles email conflict checks and password hashing
-    console.log(`AuthService: Registering user ${createUserDto.email}`);
+  async register(dto: RegisterDto): Promise<Omit<User, 'password' | 'refreshToken'>> {
+    const existingUser = await this.usersService.findByEmail(dto.email);
+    if (existingUser) throw new ConflictException('un utilisateur avec cet email existe déjà.');
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(dto.password, salt);
+
     try {
-      // We directly call the UsersService.create which returns the secure user data
-      const newUser = await this.usersService.create(createUserDto);
-      console.log(
-        `AuthService: User ${createUserDto.email} registered successfully`,
-      );
-      // We don't automatically log in the user here, just return the created user info
-      return newUser;
+      const newUser = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          password: hashedPassword,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          role: UserRole.ADMIN // Rôle par défaut pour l'inscription publique
+        },
+      })
+
+      const { password, refreshToken, ...result } = newUser;
+      return result;
+
     } catch (error) {
-      // Re-throw specific exceptions handled by UsersService (like ConflictException)
-      if (error instanceof ConflictException) {
-        throw error; // Let Nest handle the 409 response
-      }
-      // Log and throw a generic error for other issues
-      console.error(
-        `AuthService: Error during registration for ${createUserDto.email}:`,
-        error,
-      );
-      throw new InternalServerErrorException('Could not register user.');
+      console.error('Error registering user:', error);
+      throw new InternalServerErrorException("Erreur lors de l'inscription.");
     }
   }
 
-  async login(
-    user: Omit<User, 'password' | 'hashedRefreshToken'>,
-    response: any,
-  ): Promise<void> {
+  async login(user: Omit<User, 'password' | 'refreshToken'>, response: any): Promise<void> {
     // response is Express Response
     const tokens = await this._generateTokens({
       sub: user.id,
@@ -87,13 +82,13 @@ export class AuthService {
       where: { id: userId },
     });
 
-    if (!user || !user.hashedRefreshToken) {
+    if (!user || !user.refreshToken) {
       throw new ForbiddenException(
         'Access Denied: User not found or no refresh token',
       );
     }
 
-    const rtMatches = await bcrypt.compare(rt, user.hashedRefreshToken);
+    const rtMatches = await bcrypt.compare(rt, user.refreshToken);
     if (!rtMatches) {
       throw new ForbiddenException('Access Denied: Invalid refresh token');
     }
@@ -110,30 +105,16 @@ export class AuthService {
     console.log(`Tokens refreshed for user ${userId}`);
   }
 
-  async logout(userId: number, response: any): Promise<void> {
+  async logout(userId: number | null, response: Response) {
     // response is Express Response
     // Set refresh token hash to null in database
-    try {
-      await this.prisma.user.updateMany({
-        where: {
-          id: userId,
-          hashedRefreshToken: {
-            not: null,
-          },
-        },
-        data: {
-          hashedRefreshToken: null,
-        },
-      });
-      this._clearCookies(response);
-      console.log(`User ${userId} logged out`);
-    } catch (error) {
-      console.error(`Error logging out user ${userId}:`, error);
-      // Don't necessarily throw an error to the client, just log it
-      // Maybe clear cookies anyway?
-      this._clearCookies(response);
-      // throw new InternalServerErrorException('Could not process logout');
+
+    if (userId) {
+      await this.usersService.updateRefreshTokenHash(userId, null);
     }
+    this._clearCookies(response);
+    console.log(`Logout processed. User ID: ${userId || 'Unknown (Public Route)'}`);
+
   }
 
   // --- Helper Methods ---
@@ -152,10 +133,7 @@ export class AuthService {
       }),
     ]);
 
-    return {
-      accessToken: at,
-      refreshToken: rt,
-    };
+    return { accessToken: at, refreshToken: rt };
   }
 
   private async _updateRefreshTokenHash(
@@ -166,25 +144,20 @@ export class AuthService {
     const hash = await bcrypt.hash(rt, salt);
     await this.prisma.user.update({
       where: { id: userId },
-      data: { hashedRefreshToken: hash },
+      data: { refreshToken: hash },
     });
     console.log(`Updated refresh token hash for user ${userId}`);
   }
 
   private _setCookies(response: any, tokens: Tokens): void {
-    const env = this.configService.get('NODE_ENV');
-
-    // 1. If we are on Vercel, it's 'production'. 
-    // 2. Since your frontend is on Localhost and backend on Vercel,
-    //    we MUST use 'none' and 'secure'.
-    const isVercelDeployment = env === 'production';
+    const isProduction = this.configService.get('NODE_ENV') === 'production'
 
     const cookieOptions = {
       httpOnly: true,
       // On Vercel (HTTPS), we use true. On local PC (HTTP), we use false.
-      secure: isVercelDeployment,
+      secure: isProduction,
       // On Vercel (Cross-site), we use 'none'. On local PC, 'lax' is fine.
-      sameSite: isVercelDeployment ? ('none' as const) : ('lax' as const),
+      sameSite: isProduction ? ('none' as const) : ('lax' as const),
       path: '/',
     };
 
@@ -203,12 +176,7 @@ export class AuthService {
   }
 
   private _clearCookies(response: any): void {
-    const clearOptions = {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'none' as const,
-    };
-
+    const clearOptions = { httpOnly: true, secure: true, sameSite: 'none' as const };
     response.clearCookie('accessToken', { ...clearOptions, path: '/' });
     response.clearCookie('refreshToken', { ...clearOptions, path: '/api/auth' });
   }
