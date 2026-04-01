@@ -24,7 +24,7 @@ import { CreateUserDto } from '../users/dto/create-user.dto';
 
 @Controller('auth') // Base path /api/auth
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService) { }
 
   @Public() // Mark register as public
   @Post('register')
@@ -51,7 +51,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response, // Inject Express Response
   ) {
     // req.user contains the user object returned by LocalStrategy.validate
-    console.log('Login controller: User validated:', req.user);
+    // console.log('Login controller: User validated:', req.user);
     await this.authService.login(req.user, response);
     // Cookies are set by authService.login
     return { message: 'Login successful', user: req.user }; // Return confirmation
@@ -79,7 +79,7 @@ export class AuthController {
     @GetCurrentUser() user: JwtPayloadWithRt, // Get user payload + RT
     @Res({ passthrough: true }) response: Response,
   ) {
-    console.log(`Refresh token request for user ${user.sub}`);
+    // console.log(`Refresh token request for user ${user.sub}`);
     await this.authService.refreshTokens(user.sub, user.refreshToken, response);
     // Cookies are set by authService.refreshTokens
     return { message: 'Tokens refreshed successfully' };
@@ -91,7 +91,7 @@ export class AuthController {
   @Get('profile')
   getProfile(@GetCurrentUser() user) {
     // req.user contains the payload validated by JwtStrategy
-    console.log(`Profile requested by user ${user.id}`);
+    // console.log(`Profile requested by user ${user.id}`);
     // Return only necessary, non-sensitive data
     return {
       userId: user.id,

@@ -167,8 +167,8 @@ enum PropertyStatus {
   UNAVAILABLE
 }
 
-// TODO: Add a type for the rental (Palier, Villa, Appartement, Studio, Magasin)
-// TODO: Add a status for the rental (Occupé, Disponible, En maintenance)
+// TODO: Add a type for the rental/locative (Palier, Villa, Appartement, Studio, Magasin)
+// TODO: Add a status for the rental/locative (Occupé, Disponible, En maintenance)
 
 // TODO: Add a type for Contract Type (contrat de bail Habitation, contrat de bail commercial, etc.)
 
