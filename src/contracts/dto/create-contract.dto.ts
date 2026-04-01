@@ -7,12 +7,20 @@ import {
   Min,
   IsEnum,
 } from 'class-validator';
-import { ContractStatus } from '@prisma/client';
+import { ContractStatus, LeaseType } from '@prisma/client';
 
 export class CreateContractDto {
   @IsInt()
   @IsNotEmpty()
+  ownerId: number;
+
+  @IsInt()
+  @IsNotEmpty()
   propertyId: number;
+
+  @IsInt()
+  @IsNotEmpty()
+  rentalId: number;
 
   @IsInt()
   @IsNotEmpty()
@@ -20,7 +28,7 @@ export class CreateContractDto {
 
   @IsInt()
   @IsNotEmpty()
-  managerId: number; // Employee ID responsible
+  managerId: number;
 
   @IsDateString()
   @IsNotEmpty()
@@ -29,6 +37,22 @@ export class CreateContractDto {
   @IsOptional()
   @IsDateString()
   endDate?: string | Date;
+
+  @IsInt()
+  @IsNotEmpty()
+  rentDeposit: number;
+
+  @IsInt()
+  @IsNotEmpty()
+  rentAdvance: number;
+
+  @IsInt()
+  @IsNotEmpty()
+  dayAddToPaymentDay: number;
+
+  @IsInt()
+  @IsNotEmpty()
+  paymentStartAfter: number;
 
   @IsNumber()
   @Min(0)
@@ -39,6 +63,10 @@ export class CreateContractDto {
   @IsNotEmpty()
   @Min(0)
   depositAmount: number;
+
+  @IsEnum(LeaseType)
+  @IsNotEmpty()
+  leaseType: LeaseType = LeaseType.RESIDENTIAL_LEASE;
 
   @IsOptional()
   @IsEnum(ContractStatus)

@@ -1,13 +1,4 @@
-import {
-  IsInt,
-  IsNotEmpty,
-  IsNumber,
-  Min,
-  IsString,
-  IsDateString,
-  IsEnum,
-  IsOptional,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, IsDateString, IsEnum, IsOptional, IsInt } from 'class-validator';
 import { ExpenseType, ExpenseStatus } from '@prisma/client';
 
 export class CreateExpenseDto {
@@ -15,8 +6,17 @@ export class CreateExpenseDto {
   @IsNotEmpty()
   propertyId: number;
 
+  @IsInt()
+  @IsOptional()
+  rentalId?: number;
+
+  // recordedById est généralement récupéré du JWT (user connecté), 
+  // mais on peut le laisser ici pour les cas admin ou validation manuelle
+  @IsInt()
+  @IsNotEmpty()
+  recordedById: number;
+
   @IsNumber()
-  @Min(0)
   @IsNotEmpty()
   amount: number;
 
@@ -26,13 +26,13 @@ export class CreateExpenseDto {
 
   @IsDateString()
   @IsNotEmpty()
-  date: string | Date;
+  date: string;
 
   @IsEnum(ExpenseType)
   @IsNotEmpty()
   type: ExpenseType;
 
-  @IsOptional()
   @IsEnum(ExpenseStatus)
-  status?: ExpenseStatus; // Defaults to PENDING
+  @IsOptional()
+  status?: ExpenseStatus;
 }

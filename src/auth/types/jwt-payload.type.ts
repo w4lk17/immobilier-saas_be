@@ -1,7 +1,14 @@
 export type JwtPayload = {
-  sub: number; // User ID
+  sub: number;
   email: string;
-  role: string; // Add roles or other relevant info
+  role: string;
 };
 
 export type JwtPayloadWithRt = JwtPayload & { refreshToken: string };
+
+export type RequestUser = {
+  id: number;   // On peut utiliser 'id' ici pour être cohérent avec Prisma/Code
+  email: string;
+  role: string;
+  isActive: boolean;
+};

@@ -1,17 +1,103 @@
-import { IsString, IsOptional, IsInt, IsNotEmpty } from 'class-validator';
+// src/employees/dto/create-manager.dto.ts
+import { IsString, IsEmail, IsNotEmpty, IsEnum, IsOptional, IsDateString, MinLength } from 'class-validator';
+import { EmploymentType } from '@prisma/client';
 
 export class CreateEmployeeDto {
-  @IsInt()
+  // --- Champs Auth & Identité de base ---
+  @IsEmail()
   @IsNotEmpty()
-  userId: number; // ID of an existing User
+  email: string;
 
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(6)
+  password: string;
+
+  @IsString()
+  @IsNotEmpty()
+  firstName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  lastName: string;
+
+  @IsString()
+  @IsOptional()
+  phoneNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  civility?: string;
+
+  @IsDateString()
+  @IsOptional()
+  dateOfBirth?: string;
+
+  @IsString()
+  @IsOptional()
+  address?: string;
+
+  @IsString()
+  @IsOptional()
+  pictureUrl?: string;
+
+  // --- Champs Professionnels (User) ---
+  @IsString()
+  @IsOptional()
+  workPlace?: string;
+
+  @IsString()
+  @IsOptional()
+  occupation?: string;
+
+  // --- Documents d'identité ---
+  @IsString()
+  @IsOptional()
+  identityDocumentNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  identityDocumentType?: string;
+
+  @IsString()
+  @IsOptional()
+  identityDeliveryCity?: string;
+
+  @IsDateString()
+  @IsOptional()
+  identityDeliveryDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  identityExpiryDate?: string;
+
+  // --- Personne à contacter (PAC) ---
+  @IsString()
+  @IsOptional()
+  pacLastName?: string;
+
+  @IsString()
+  @IsOptional()
+  pacFirstName?: string;
+
+  @IsString()
+  @IsOptional()
+  pacPhoneNumber?: string;
+
+  // --- Champs spécifiques Employé ---
   @IsString()
   @IsNotEmpty()
   position: string;
 
+  @IsEnum(EmploymentType)
   @IsOptional()
-  @IsString() // Add phone number validation if needed
-  phoneNumber?: string;
+  employmentType?: EmploymentType;
 
-  // hireDate defaults in schema
+  @IsDateString()
+  @IsOptional()
+  hireDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  terminationDate?: string;
 }

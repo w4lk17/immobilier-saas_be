@@ -1,7 +1,8 @@
-import { OmitType } from '@nestjs/mapped-types';
+import { PartialType, OmitType } from '@nestjs/mapped-types';
 import { CreateEmployeeDto } from './create-employee.dto';
 
-// Usually, you wouldn't change the linked user ID via update DTO
-export class UpdateEmployeeDto extends OmitType(CreateEmployeeDto, [
-  'userId',
-] as const) {}
+// On exclut password et email pour la sécurité
+// On notera que isActive n'est PAS inclus ici, car géré via une route dédiée
+export class UpdateEmployeeDto extends PartialType(
+  OmitType(CreateEmployeeDto, ['password', 'email'] as const),
+) { }

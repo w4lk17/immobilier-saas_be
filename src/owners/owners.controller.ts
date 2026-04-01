@@ -7,10 +7,12 @@ import {
   Param,
   Delete,
   ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { OwnersService } from './owners.service';
 import { CreateOwnerDto } from './dto/create-owner.dto';
 import { UpdateOwnerDto } from './dto/update-owner.dto';
+import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
@@ -18,49 +20,50 @@ import { JwtPayload } from '../auth/types';
 
 @Controller('owners')
 export class OwnersController {
-  constructor(private readonly ownersService: OwnersService) {}
+  constructor(private readonly ownersService: OwnersService) { }
 
   @Post()
-  @Roles(UserRole.ADMIN) // Only Admins can link a User to an Owner profile
+  @Roles(UserRole.ADMIN)
   create(@Body() createOwnerDto: CreateOwnerDto) {
     return this.ownersService.create(createOwnerDto);
   }
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE) // Admins and Employees can list owners
+  @Roles(UserRole.ADMIN)
   findAll() {
     return this.ownersService.findAll();
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE, UserRole.OWNER) // Admins, Employees, and the Owner themselves can view
+  @Roles(UserRole.ADMIN, UserRole.OWNER)
   findOne(
     @Param('id', ParseIntPipe) id: number,
     @GetCurrentUser() user: JwtPayload,
   ) {
-    // TODO: Add logic here or in service: If user.role is OWNER, check if 'id' corresponds to their own owner profile ID.
-    console.log(
-      `User <span class="math-inline">\{user\.sub\} \(</span>{user.role}) requesting owner ${id}`,
-    );
-    return this.ownersService.findOne(id);
+    return this.ownersService.findOne(id, user);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.OWNER) // Admins and the Owner themselves can update
+  @Roles(UserRole.ADMIN, UserRole.OWNER)
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateOwnerDto: UpdateOwnerDto,
     @GetCurrentUser() user: JwtPayload,
   ) {
-    // TODO: Add logic here or in service: If user.role is OWNER, check if 'id' corresponds to their own owner profile ID before allowing update.
-    console.log(
-      `User <span class="math-inline">\{user\.sub\} \(</span>{user.role}) updating owner ${id}`,
-    );
-    return this.ownersService.update(id, updateOwnerDto);
+    return this.ownersService.update(id, updateOwnerDto, user);
+  }
+
+  @Patch(':id/status')
+  @Roles(UserRole.ADMIN) 
+  updateStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateStatusDto: UpdateStatusDto,
+  ) {
+    return this.ownersService.updateStatus(id, updateStatusDto);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN) // Only Admins can delete owner profiles (cascades to Properties!)
+  @Roles(UserRole.ADMIN)
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.ownersService.remove(id);
   }

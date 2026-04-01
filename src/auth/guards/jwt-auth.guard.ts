@@ -30,10 +30,10 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   handleRequest(err, user, info) {
     // You can throw an exception based on either "info" or "err" arguments
     if (err || !user) {
-      console.error(
-        'JwtAuthGuard Error:',
-        err || info?.message || 'No user found',
-      );
+      // console.error(
+      //   'JwtAuthGuard Error:',
+      //   err || info?.message || 'No user found',
+      // );
       throw (
         err || new UnauthorizedException(info?.message || 'Unauthorized Access')
       );

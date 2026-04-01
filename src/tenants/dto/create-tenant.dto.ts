@@ -1,11 +1,89 @@
-import { IsString, IsOptional, IsInt, IsNotEmpty } from 'class-validator';
+import { IsString, IsEmail, IsNotEmpty, IsOptional, IsDateString, MinLength } from 'class-validator';
 
 export class CreateTenantDto {
-  @IsInt()
+  // --- Champs Auth & Identité de base ---
+  @IsEmail()
   @IsNotEmpty()
-  userId: number; // ID of an existing User
+  email: string;
 
-  @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  @MinLength(6)
+  password: string;
+
+  @IsString()
+  @IsNotEmpty()
+  firstName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  lastName: string;
+
+  @IsString()
+  @IsOptional()
   phoneNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  civility?: string;
+
+  @IsDateString()
+  @IsOptional()
+  dateOfBirth?: string;
+
+  @IsString()
+  @IsOptional()
+  address?: string; // Adresse actuelle
+
+  @IsString()
+  @IsOptional()
+  pictureUrl?: string;
+
+  // --- Champs Professionnels (User) ---
+  @IsString()
+  @IsOptional()
+  workPlace?: string;
+
+  @IsString()
+  @IsOptional()
+  occupation?: string;
+
+  // --- Documents d'identité ---
+  @IsString()
+  @IsOptional()
+  identityDocumentNumber?: string;
+
+  @IsString()
+  @IsOptional()
+  identityDocumentType?: string;
+
+  @IsString()
+  @IsOptional()
+  identityDeliveryCity?: string;
+
+  @IsDateString()
+  @IsOptional()
+  identityDeliveryDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  identityExpiryDate?: string;
+
+  // --- Personne à contacter (PAC) ---
+  @IsString()
+  @IsOptional()
+  pacLastName?: string;
+
+  @IsString()
+  @IsOptional()
+  pacFirstName?: string;
+
+  @IsString()
+  @IsOptional()
+  pacPhoneNumber?: string;
+
+  // --- Champs spécifiques Locataire (Tenant) ---
+  @IsString()
+  @IsOptional()
+  oldAddress?: string; // Adresse précédente
 }

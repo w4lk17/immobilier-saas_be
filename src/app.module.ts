@@ -9,12 +9,14 @@ import { OwnersModule } from './owners/owners.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { PropertiesModule } from './properties/properties.module';
 import { ContractsModule } from './contracts/contracts.module';
-import { PaymentsModule } from './payments/payments.module';
+import { InvoicesModule } from './invoices/invoices.module';
+import { BillingModule } from './billing/billing.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { RentalsModule } from './rentals/rentals.module';
 
 @Module({
   imports: [
@@ -29,8 +31,10 @@ import { AppService } from './app.service';
     OwnersModule,
     TenantsModule,
     PropertiesModule,
+    RentalsModule,
     ContractsModule,
-    PaymentsModule,
+    InvoicesModule,
+    BillingModule,
     ExpensesModule,
   ],
   controllers: [AppController], // AppController can be removed if not used

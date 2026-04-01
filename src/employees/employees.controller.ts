@@ -7,64 +7,64 @@ import {
   Param,
   Delete,
   ParseIntPipe,
-  UseGuards,
 } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
-import { Roles } from '../auth/decorators/roles.decorator'; // Adjust path
+import { UpdateStatusDto } from '../common/dto/update-status.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
-import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator'; // Adjust path
-import { JwtPayload } from '../auth/types'; // Adjust path
+import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
+import { JwtPayload } from '../auth/types';
 
 @Controller('employees')
-// Global guards (JwtAuthGuard, RolesGuard) are active by default
 export class EmployeesController {
-  constructor(private readonly employeesService: EmployeesService) {}
+  constructor(private readonly employeesService: EmployeesService) { }
 
   @Post()
-  @Roles(UserRole.ADMIN) // Only Admins can create new employee profiles
+  @Roles(UserRole.ADMIN) 
   create(@Body() createEmployeeDto: CreateEmployeeDto) {
     return this.employeesService.create(createEmployeeDto);
   }
 
   @Get()
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE) // Admins and Employees can list employees
+  @Roles(UserRole.ADMIN) // Seul l'Admin peut lister tous les employés
   findAll() {
-    // TODO: Employees should potentially only see themselves or colleagues?
-    // Add filtering logic in service based on user role/ID if needed.
     return this.employeesService.findAll();
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE) // Admins and Employees can view details
+  @Roles(UserRole.ADMIN, UserRole.MANAGER) // Admin ou l'employé lui-même
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload, // Get logged-in user info
+    @GetCurrentUser() user: JwtPayload,
   ) {
-    // TODO: Add logic here or in service: If user.role is EMPLOYEE, check if user.sub (their ID) matches the employee's userId or if id matches their own employee profile id.
-    console.log(
-      `User <span class="math-inline">\{user\.sub\} \(</span>{user.role}) requesting employee ${id}`,
-    );
-    return this.employeesService.findOne(id);
+    // Le service vérifiera si l'employé tente de voir le profil d'un autre
+    return this.employeesService.findOne(id, user);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.EMPLOYEE) // Admins can update anyone, Employees potentially themselves
+  @Roles(UserRole.ADMIN, UserRole.MANAGER) // Admin ou l'employé lui-même
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateEmployeeDto: UpdateEmployeeDto,
-    @GetCurrentUser() user: JwtPayload, // Get logged-in user info
+    @GetCurrentUser() user: JwtPayload,
   ) {
-    // TODO: Add logic here or in service: If user.role is EMPLOYEE, check if 'id' corresponds to their own employee profile before allowing update.
-    console.log(
-      `User <span class="math-inline">\{user\.sub\} \(</span>{user.role}) updating employee ${id}`,
-    );
-    return this.employeesService.update(id, updateEmployeeDto);
+    // Le service vérifiera les droits (ex: un employé ne peut pas changer son poste)
+    return this.employeesService.update(id, updateEmployeeDto, user);
+  }
+
+  @Patch(':id/status')
+  @Roles(UserRole.ADMIN) // Seul l'Admin peut changer le statut actif/inactif
+  updateStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateStatusDto: UpdateStatusDto,
+  ) {
+    return this.employeesService.updateStatus(id, updateStatusDto);
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN) // Only Admins can delete employee profiles
+  @Roles(UserRole.ADMIN) // Seul l'Admin peut supprimer un profil employé
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.employeesService.remove(id);
   }

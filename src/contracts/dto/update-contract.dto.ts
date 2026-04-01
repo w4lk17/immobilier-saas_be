@@ -1,32 +1,11 @@
-import { PartialType } from '@nestjs/mapped-types';
+import { PartialType, OmitType } from '@nestjs/mapped-types';
 import { CreateContractDto } from './create-contract.dto';
-import {
-  IsEnum,
-  IsOptional,
-  IsDateString,
-  IsNumber,
-  Min,
-} from 'class-validator';
-import { ContractStatus } from '@prisma/client';
 
-// Allow updating specific fields like status, end date, maybe rent/deposit
-export class UpdateContractDto {
-  @IsOptional()
-  @IsEnum(ContractStatus)
-  status?: ContractStatus;
-
-  @IsOptional()
-  @IsDateString()
-  endDate?: string | Date;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  rentAmount?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  depositAmount?: number;
-  // Usually don't change property/tenant/manager after creation via simple update
-}
+// On exclut TOUTES les clés étrangères d'identité.
+// On ne change PAS le locataire, le propriétaire ou le bien en cours de contrat.
+// On modifie seulement les détails (dates, montant si renouvellement, statut).
+export class UpdateContractDto extends PartialType(
+  OmitType(CreateContractDto,
+    ['ownerId', 'tenantId', 'propertyId', 'rentalId', 'managerId'] as const
+  ),
+) { }
