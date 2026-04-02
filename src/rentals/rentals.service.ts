@@ -13,7 +13,7 @@ import { JwtPayload } from '../auth/types';
 
 @Injectable()
 export class RentalsService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   async create(
     createRentalDto: CreateRentalDto,
@@ -38,11 +38,11 @@ export class RentalsService {
 
     // 3. Si MANAGER : Vérifier qu'il est assigné à cette propriété
     if (user.role === UserRole.MANAGER) {
-      const employeeProfile = await this.prisma.employee.findUnique({
+      const managerProfile = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
       // Si pas de profil ou pas le manager de cette propriété
-      if (!employeeProfile || property.managerId !== employeeProfile.id) {
+      if (!managerProfile || property.managerId !== managerProfile.id) {
         throw new ForbiddenException(
           `Vous n'êtes pas autorisé à gérer cette propriété.`,
         );
@@ -56,7 +56,9 @@ export class RentalsService {
       });
     } catch (error) {
       console.error('Error creating rental:', error);
-      throw new InternalServerErrorException("Impossible de créer l'unité locative.");
+      throw new InternalServerErrorException(
+        "Impossible de créer l'unité locative.",
+      );
     }
   }
 
@@ -73,11 +75,11 @@ export class RentalsService {
       whereClause.property = { ownerId: ownerProfile.id };
     } else if (user.role === UserRole.MANAGER) {
       // MANAGER : Voit les rentals des propriétés qu'il gère
-      const employeeProfile = await this.prisma.employee.findUnique({
+      const managerProfile = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
-      if (!employeeProfile) return [];
-      whereClause.property = { managerId: employeeProfile.id };
+      if (!managerProfile) return [];
+      whereClause.property = { managerId: managerProfile.id };
     } else if (user.role === UserRole.TENANT) {
       // TENANT : Voit les rentals liés à ses contrats
       whereClause.contracts = {
@@ -145,14 +147,18 @@ export class RentalsService {
       });
     } catch (error) {
       console.error('Error updating rental:', error);
-      throw new InternalServerErrorException("Impossible de mettre à jour l'unité locative.");
+      throw new InternalServerErrorException(
+        "Impossible de mettre à jour l'unité locative.",
+      );
     }
   }
 
   async remove(id: number, user: JwtPayload): Promise<Rental> {
     // 1. RBAC Check : SEUL ADMIN peut supprimer
     if (user.role !== UserRole.ADMIN) {
-      throw new ForbiddenException('Seul un administrateur peut supprimer une unité locative.');
+      throw new ForbiddenException(
+        'Seul un administrateur peut supprimer une unité locative.',
+      );
     }
 
     const rental = await this.prisma.rental.findUnique({
@@ -166,7 +172,9 @@ export class RentalsService {
 
     // 2. Vérifier l'intégrité (Pas de contrats actifs)
     const activeContractsCount = rental.contracts.filter(
-      (c) => c.status === ContractStatus.ACTIVE || c.status === ContractStatus.PENDING
+      (c) =>
+        c.status === ContractStatus.ACTIVE ||
+        c.status === ContractStatus.PENDING,
     ).length;
 
     if (activeContractsCount > 0) {
@@ -179,7 +187,9 @@ export class RentalsService {
       return await this.prisma.rental.delete({ where: { id } });
     } catch (error) {
       console.error('Error deleting rental:', error);
-      throw new InternalServerErrorException("Impossible de supprimer l'unité locative.");
+      throw new InternalServerErrorException(
+        "Impossible de supprimer l'unité locative.",
+      );
     }
   }
 
@@ -225,39 +235,52 @@ export class RentalsService {
   }
 
   // Vérifie si l'utilisateur a le droit de VOIR ce rental
-  private async checkAccessPermission(rental: any, user: JwtPayload): Promise<void> {
+  private async checkAccessPermission(
+    rental: any,
+    user: JwtPayload,
+  ): Promise<void> {
     if (user.role === UserRole.ADMIN) return;
 
     // Check Employee
     if (user.role === UserRole.MANAGER) {
-      const emp = await this.prisma.employee.findUnique({ where: { userId: user.sub } });
+      const emp = await this.prisma.manager.findUnique({
+        where: { userId: user.sub },
+      });
       if (rental.property.managerId === emp?.id) return;
     }
 
     // Check Owner
     if (user.role === UserRole.OWNER) {
-      const own = await this.prisma.owner.findUnique({ where: { userId: user.sub } });
+      const own = await this.prisma.owner.findUnique({
+        where: { userId: user.sub },
+      });
       if (rental.property.ownerId === own?.id) return;
     }
 
     // Check Tenant
     if (user.role === UserRole.TENANT) {
       const hasContract = rental.contracts.some(
-        (c: any) => c.tenant?.user?.id === user.sub || c.tenant?.userId === user.sub
+        (c: any) =>
+          c.tenant?.user?.id === user.sub || c.tenant?.userId === user.sub,
       );
       if (hasContract) return;
     }
 
-    throw new ForbiddenException("Vous n'avez pas accès à cette unité locative.");
+    throw new ForbiddenException(
+      "Vous n'avez pas accès à cette unité locative.",
+    );
   }
 
   // Vérifie si l'employé gère la propriété donnée
-  private async verifyManagerPermission(property: any, user: JwtPayload): Promise<void> {
-    const employeeProfile = await this.prisma.employee.findUnique({
+  private async verifyManagerPermission(
+    property: any,
+    user: JwtPayload,
+  ): Promise<void> {
+    const managerProfile = await this.prisma.manager.findUnique({
       where: { userId: user.sub },
     });
-    if (!employeeProfile || property.managerId !== employeeProfile.id) {
-      throw new ForbiddenException("Vous ne gérez pas cette propriété.");
+    if (!managerProfile || property.managerId !== managerProfile.id) {
+      throw new ForbiddenException('Vous ne gérez pas cette propriété.');
     }
   }
 }

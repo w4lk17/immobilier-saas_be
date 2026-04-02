@@ -24,4 +24,3 @@ export class BillingWebhooksController {
     return this.billingService.handleMobileMoneyWebhook(req.body);
   }
 }
-

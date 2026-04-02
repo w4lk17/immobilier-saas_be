@@ -18,7 +18,7 @@ import { JwtPayload } from '../auth/types';
 
 @Controller('contracts')
 export class ContractsController {
-  constructor(private readonly contractsService: ContractsService) { }
+  constructor(private readonly contractsService: ContractsService) {}
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.MANAGER) // Admin or Employee (manager) can create

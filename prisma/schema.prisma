@@ -163,9 +163,9 @@ model User {
   updatedAt    DateTime @updatedAt
 
   // Relations Profil (One-to-One)
-  ownerProfile    Owner?
-  employeeProfile Employee?
-  tenantProfile   Tenant?
+  ownerProfile   Owner?
+  managerProfile Manager?
+  tenantProfile  Tenant?
 
   // Relations Directes
   recordedExpenses Expense[] @relation("UserExpenses")
@@ -192,7 +192,7 @@ model Owner {
   @@map("owners")
 }
 
-model Employee {
+model Manager {
   id     Int @id @default(autoincrement())
   userId Int @unique
 
@@ -207,7 +207,7 @@ model Employee {
   managedProperties Property[] @relation("PropertyManager")
   managedContracts  Contract[] @relation("ContractManager")
 
-  @@map("employees")
+  @@map("managers")
 }
 
 model Tenant {
@@ -242,7 +242,7 @@ model Property {
   updatedAt     DateTime       @updatedAt
 
   owner   Owner     @relation(fields: [ownerId], references: [id])
-  manager Employee? @relation("PropertyManager", fields: [managerId], references: [id])
+  manager Manager? @relation("PropertyManager", fields: [managerId], references: [id])
 
   rentals   Rental[]
   contracts Contract[]
@@ -294,7 +294,7 @@ model Contract {
   property Property  @relation(fields: [propertyId], references: [id])
   rental   Rental    @relation(fields: [rentalId], references: [id])
   tenant   Tenant    @relation(fields: [tenantId], references: [id])
-  manager  Employee? @relation("ContractManager", fields: [managerId], references: [id])
+  manager  Manager? @relation("ContractManager", fields: [managerId], references: [id])
   invoices Invoice[]
 
   @@map("contracts")

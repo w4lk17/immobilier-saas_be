@@ -52,7 +52,8 @@ export class BillingService {
       },
     });
 
-    if (!invoice) throw new NotFoundException(`Invoice with ID "${invoiceId}" not found.`);
+    if (!invoice)
+      throw new NotFoundException(`Invoice with ID "${invoiceId}" not found.`);
 
     // RBAC
     if (user.role === UserRole.TENANT) {
@@ -60,17 +61,23 @@ export class BillingService {
         where: { userId: user.sub },
       });
       if (!tenantProfile || invoice.tenantId !== tenantProfile.id) {
-        throw new ForbiddenException('You do not have permission to pay this invoice.');
+        throw new ForbiddenException(
+          'You do not have permission to pay this invoice.',
+        );
       }
     } else if (user.role === UserRole.MANAGER) {
-      const employeeProfile = await this.prisma.employee.findUnique({
+      const managerProfile = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
-      if (!employeeProfile || invoice.contract.managerId !== employeeProfile.id) {
-        throw new ForbiddenException('You do not have permission to pay this invoice.');
+      if (!managerProfile || invoice.contract.managerId !== managerProfile.id) {
+        throw new ForbiddenException(
+          'You do not have permission to pay this invoice.',
+        );
       }
     } else if (user.role !== UserRole.ADMIN) {
-      throw new ForbiddenException('You do not have permission to pay this invoice.');
+      throw new ForbiddenException(
+        'You do not have permission to pay this invoice.',
+      );
     }
 
     return invoice;
@@ -78,7 +85,9 @@ export class BillingService {
 
   async initiateStripePayment(invoiceId: number, user: JwtPayload) {
     if (!this.stripe) {
-      throw new InternalServerErrorException('Stripe is not configured (missing STRIPE_SECRET_KEY).');
+      throw new InternalServerErrorException(
+        'Stripe is not configured (missing STRIPE_SECRET_KEY).',
+      );
     }
 
     const invoice = await this.getInvoiceForPayment(invoiceId, user);
@@ -92,7 +101,9 @@ export class BillingService {
       throw new BadRequestException('Nothing left to pay for this invoice.');
     }
 
-    const currency = (this.configService.get<string>('PAYMENT_CURRENCY') || 'xof').toLowerCase();
+    const currency = (
+      this.configService.get<string>('PAYMENT_CURRENCY') || 'xof'
+    ).toLowerCase();
     const providerAmount = toProviderAmount(amountToPay, currency);
     if (!Number.isFinite(providerAmount) || providerAmount <= 0) {
       throw new BadRequestException('Invalid payment amount.');
@@ -163,12 +174,18 @@ export class BillingService {
 
   async handleStripeWebhook(rawBody: Buffer | undefined, signature?: string) {
     if (!this.stripe) {
-      throw new InternalServerErrorException('Stripe is not configured (missing STRIPE_SECRET_KEY).');
+      throw new InternalServerErrorException(
+        'Stripe is not configured (missing STRIPE_SECRET_KEY).',
+      );
     }
 
-    const webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
+    const webhookSecret = this.configService.get<string>(
+      'STRIPE_WEBHOOK_SECRET',
+    );
     if (!webhookSecret) {
-      throw new InternalServerErrorException('Stripe webhook is not configured (missing STRIPE_WEBHOOK_SECRET).');
+      throw new InternalServerErrorException(
+        'Stripe webhook is not configured (missing STRIPE_WEBHOOK_SECRET).',
+      );
     }
 
     if (!rawBody || rawBody.length === 0) {
@@ -180,25 +197,32 @@ export class BillingService {
 
     let event: Stripe.Event;
     try {
-      event = this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+      event = this.stripe.webhooks.constructEvent(
+        rawBody,
+        signature,
+        webhookSecret,
+      );
     } catch (err: any) {
-      console.error('Stripe webhook signature verification failed:', err?.message || err);
+      console.error(
+        'Stripe webhook signature verification failed:',
+        err?.message || err,
+      );
       throw new ForbiddenException('Invalid Stripe signature.');
     }
 
     switch (event.type) {
       case 'payment_intent.succeeded': {
-        const pi = event.data.object as Stripe.PaymentIntent;
+        const pi = event.data.object;
         await this.markStripeTransactionSucceeded(pi.id, event);
         break;
       }
       case 'payment_intent.payment_failed': {
-        const pi = event.data.object as Stripe.PaymentIntent;
+        const pi = event.data.object;
         await this.markStripeTransactionFailed(pi.id, event);
         break;
       }
       case 'payment_intent.canceled': {
-        const pi = event.data.object as Stripe.PaymentIntent;
+        const pi = event.data.object;
         await this.markStripeTransactionCancelled(pi.id, event);
         break;
       }
@@ -244,40 +268,50 @@ export class BillingService {
       include: { invoice: true },
     });
     if (!transaction) return { received: true };
-    if (transaction.status === PaymentTransactionStatus.SUCCESS) return { received: true };
+    if (transaction.status === PaymentTransactionStatus.SUCCESS)
+      return { received: true };
 
     if (status === PaymentTransactionStatus.SUCCESS) {
       await this.prisma.$transaction(async (tx) => {
         await tx.paymentTransaction.update({
           where: { id: transaction.id },
-          data: { status, rawPayload: payload as any },
+          data: { status, rawPayload: payload },
         });
 
         const invoice = transaction.invoice;
-        const newPaid = Math.min(invoice.amountDue, invoice.paidAmount + transaction.amount);
+        const newPaid = Math.min(
+          invoice.amountDue,
+          invoice.paidAmount + transaction.amount,
+        );
         const newStatus =
-          newPaid >= invoice.amountDue ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
+          newPaid >= invoice.amountDue
+            ? InvoiceStatus.PAID
+            : InvoiceStatus.PARTIAL;
 
         await tx.invoice.update({
           where: { id: invoice.id },
           data: {
             paidAmount: newPaid,
             status: newStatus,
-            paidDate: newStatus === InvoiceStatus.PAID ? new Date() : invoice.paidDate,
+            paidDate:
+              newStatus === InvoiceStatus.PAID ? new Date() : invoice.paidDate,
           },
         });
       });
     } else {
       await this.prisma.paymentTransaction.update({
         where: { id: transaction.id },
-        data: { status, rawPayload: payload as any },
+        data: { status, rawPayload: payload },
       });
     }
 
     return { received: true };
   }
 
-  private async markStripeTransactionSucceeded(providerRef: string, rawEvent: Stripe.Event) {
+  private async markStripeTransactionSucceeded(
+    providerRef: string,
+    rawEvent: Stripe.Event,
+  ) {
     const transaction = await this.prisma.paymentTransaction.findUnique({
       where: { providerRef },
       include: { invoice: true },
@@ -295,22 +329,31 @@ export class BillingService {
       });
 
       const invoice = transaction.invoice;
-      const newPaid = Math.min(invoice.amountDue, invoice.paidAmount + transaction.amount);
+      const newPaid = Math.min(
+        invoice.amountDue,
+        invoice.paidAmount + transaction.amount,
+      );
       const newStatus =
-        newPaid >= invoice.amountDue ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
+        newPaid >= invoice.amountDue
+          ? InvoiceStatus.PAID
+          : InvoiceStatus.PARTIAL;
 
       await tx.invoice.update({
         where: { id: invoice.id },
         data: {
           paidAmount: newPaid,
           status: newStatus,
-          paidDate: newStatus === InvoiceStatus.PAID ? new Date() : invoice.paidDate,
+          paidDate:
+            newStatus === InvoiceStatus.PAID ? new Date() : invoice.paidDate,
         },
       });
     });
   }
 
-  private async markStripeTransactionFailed(providerRef: string, rawEvent: Stripe.Event) {
+  private async markStripeTransactionFailed(
+    providerRef: string,
+    rawEvent: Stripe.Event,
+  ) {
     const transaction = await this.prisma.paymentTransaction.findUnique({
       where: { providerRef },
     });
@@ -326,7 +369,10 @@ export class BillingService {
     });
   }
 
-  private async markStripeTransactionCancelled(providerRef: string, rawEvent: Stripe.Event) {
+  private async markStripeTransactionCancelled(
+    providerRef: string,
+    rawEvent: Stripe.Event,
+  ) {
     const transaction = await this.prisma.paymentTransaction.findUnique({
       where: { providerRef },
     });
@@ -342,4 +388,3 @@ export class BillingService {
     });
   }
 }
-

@@ -13,10 +13,12 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   // Function to securely select user data (exclude sensitive fields)
-  private excludeSensitiveData(user: User): Omit<User, 'password' | 'refreshToken'> {
+  private excludeSensitiveData(
+    user: User,
+  ): Omit<User, 'password' | 'refreshToken'> {
     if (!user) throw new InternalServerErrorException('User data is null');
     const { password, refreshToken, ...result } = user;
     return result;
@@ -35,7 +37,7 @@ export class UsersService {
       where: { id: userId },
       include: {
         ownerProfile: true,
-        employeeProfile: true,
+        managerProfile: true,
         tenantProfile: true,
       },
     });
@@ -56,12 +58,22 @@ export class UsersService {
     return this.prisma.user.update({
       where: { id: userId },
       data: data,
-      select: { id: true, email: true, firstName: true, lastName: true, role: true } // Sécurité
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+      }, // Sécurité
     });
   }
 
   // Changement de mot de passe
-  async changePassword(userId: number, oldPassword: string, newPassword: string) {
+  async changePassword(
+    userId: number,
+    oldPassword: string,
+    newPassword: string,
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Utilisateur non trouvé');
 
@@ -82,8 +94,8 @@ export class UsersService {
   async findAll(): Promise<Omit<User, 'password' | 'refreshToken'>[]> {
     const users = await this.prisma.user.findMany({
       orderBy: {
-        createdAt: 'desc'
-      }
+        createdAt: 'desc',
+      },
     });
     return users.map(this.excludeSensitiveData);
   }
@@ -94,8 +106,10 @@ export class UsersService {
     return this.excludeSensitiveData(user);
   }
 
-  async update(id: number, updateUserDto: UpdateUserDto): Promise<Omit<User, 'password' | 'refreshToken'>> {
-
+  async update(
+    id: number,
+    updateUserDto: UpdateUserDto,
+  ): Promise<Omit<User, 'password' | 'refreshToken'>> {
     // Handle password update specifically
     // if (updateUserDto.password) {
     //   throw new BadRequestException('Password update is not allowed via this endpoint.');
@@ -109,9 +123,11 @@ export class UsersService {
       return this.excludeSensitiveData(updatedUser);
     } catch (error) {
       // Handle Prisma errors (e.g., P2025 Record not found)
-      if (error.code === 'P2025') throw new NotFoundException(`User with ID "${id}" not found.`);
+      if (error.code === 'P2025')
+        throw new NotFoundException(`User with ID "${id}" not found.`);
       // Unique constraint violation (e.g., email)
-      if (error.code === 'P2002') throw new ConflictException('Email already exists.');
+      if (error.code === 'P2002')
+        throw new ConflictException('Email already exists.');
       throw new InternalServerErrorException('Could not update user.');
     }
   }
@@ -133,12 +149,16 @@ export class UsersService {
       const deletedUser = await this.prisma.user.delete({ where: { id } });
       return this.excludeSensitiveData(deletedUser);
     } catch (error) {
-      if (error.code === 'P2025') throw new NotFoundException(`User with ID "${id}" not found.`);
+      if (error.code === 'P2025')
+        throw new NotFoundException(`User with ID "${id}" not found.`);
       throw new InternalServerErrorException('Could not delete user.');
     }
   }
   // Utilisé par AuthService pour sauvegarder le Refresh Token
-  async updateRefreshTokenHash(userId: number, rt: string | null): Promise<void> {
+  async updateRefreshTokenHash(
+    userId: number,
+    rt: string | null,
+  ): Promise<void> {
     try {
       const hash = rt ? await bcrypt.hash(rt, 10) : null;
       await this.prisma.user.update({
@@ -146,7 +166,10 @@ export class UsersService {
         data: { refreshToken: hash },
       });
     } catch (error) {
-      console.error(`Failed to update refresh token for user ${userId}:`, error);
+      console.error(
+        `Failed to update refresh token for user ${userId}:`,
+        error,
+      );
       throw new InternalServerErrorException('Could not update token');
     }
   }

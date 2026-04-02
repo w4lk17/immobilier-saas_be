@@ -4,7 +4,7 @@ import { APP_GUARD } from '@nestjs/core'; // For global guards
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
-import { EmployeesModule } from './employees/employees.module';
+import { ManagersModule } from './managers/managers.module';
 import { OwnersModule } from './owners/owners.module';
 import { TenantsModule } from './tenants/tenants.module';
 import { PropertiesModule } from './properties/properties.module';
@@ -27,7 +27,7 @@ import { RentalsModule } from './rentals/rentals.module';
     PrismaModule, // PrismaService available globally
     AuthModule, // Authentication
     UsersModule,
-    EmployeesModule,
+    ManagersModule,
     OwnersModule,
     TenantsModule,
     PropertiesModule,

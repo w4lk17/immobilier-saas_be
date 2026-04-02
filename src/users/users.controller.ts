@@ -19,7 +19,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateStatusDto } from 'src/common/dto/update-status.dto';
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   @Get('me')
   getMyProfile(@GetCurrentUser('id') userId: number) {
@@ -41,7 +41,11 @@ export class UsersController {
     @GetCurrentUser('id') userId: number,
     @Body() dto: ChangePasswordDto,
   ) {
-    return this.usersService.changePassword(userId, dto.oldPassword, dto.newPassword);
+    return this.usersService.changePassword(
+      userId,
+      dto.oldPassword,
+      dto.newPassword,
+    );
   }
 
   // ==========================================

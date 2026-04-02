@@ -9,4 +9,3 @@ import { BillingWebhooksController } from './billing.webhooks.controller';
   exports: [BillingService],
 })
 export class BillingModule {}
-

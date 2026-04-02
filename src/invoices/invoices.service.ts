@@ -21,9 +21,12 @@ function makeInvoiceNumber(prefix = 'INV'): string {
 
 @Injectable()
 export class InvoicesService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
-  async create(createInvoiceDto: CreateInvoiceDto, user: JwtPayload): Promise<Invoice> {
+  async create(
+    createInvoiceDto: CreateInvoiceDto,
+    user: JwtPayload,
+  ): Promise<Invoice> {
     // 1. Validate Contract existence
     const contract = await this.prisma.contract.findUnique({
       where: { id: createInvoiceDto.contractId },
@@ -43,12 +46,12 @@ export class InvoicesService {
     }
 
     // 2. Authorization (Admin or Manager of the contract)
-    const employeeProfile =
+    const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.employee.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
         : null;
     const isManagerOfContract =
-      employeeProfile && contract.managerId === employeeProfile.id;
+      managerProfile && contract.managerId === managerProfile.id;
 
     if (user.role !== UserRole.ADMIN && !isManagerOfContract) {
       throw new ForbiddenException(
@@ -97,11 +100,11 @@ export class InvoicesService {
         contract: { property: { ownerId: ownerProfile.id } },
       };
     } else if (user.role === UserRole.MANAGER) {
-      const employeeProfile = await this.prisma.employee.findUnique({
+      const managerProfile = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
-      if (!employeeProfile) return [];
-      queryArgs.where = { contract: { managerId: employeeProfile.id } };
+      if (!managerProfile) return [];
+      queryArgs.where = { contract: { managerId: managerProfile.id } };
     }
 
     return this.prisma.invoice.findMany(queryArgs);
@@ -132,16 +135,17 @@ export class InvoicesService {
       user.role === UserRole.TENANT
         ? await this.prisma.tenant.findUnique({ where: { userId: user.sub } })
         : null;
-    const employeeProfile =
+    const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.employee.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
         : null;
 
     const isOwnerOfProperty =
       ownerProfile && invoice.contract.property.ownerId === ownerProfile.id;
-    const isTenantOfInvoice = tenantProfile && invoice.tenantId === tenantProfile.id;
+    const isTenantOfInvoice =
+      tenantProfile && invoice.tenantId === tenantProfile.id;
     const isManagerOfContract =
-      employeeProfile && invoice.contract.managerId === employeeProfile.id;
+      managerProfile && invoice.contract.managerId === managerProfile.id;
 
     if (
       user.role !== UserRole.ADMIN &&
@@ -157,7 +161,11 @@ export class InvoicesService {
     return invoice;
   }
 
-  async update(id: number, updateInvoiceDto: UpdateInvoiceDto, user: JwtPayload): Promise<Invoice> {
+  async update(
+    id: number,
+    updateInvoiceDto: UpdateInvoiceDto,
+    user: JwtPayload,
+  ): Promise<Invoice> {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: { contract: true, tenant: true },
@@ -167,12 +175,12 @@ export class InvoicesService {
     }
 
     // Authorization (Admin or Manager of the contract)
-    const employeeProfile =
+    const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.employee.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
         : null;
     const isManagerOfContract =
-      employeeProfile && invoice.contract.managerId === employeeProfile.id;
+      managerProfile && invoice.contract.managerId === managerProfile.id;
 
     if (user.role !== UserRole.ADMIN && !isManagerOfContract) {
       throw new ForbiddenException(
@@ -184,7 +192,11 @@ export class InvoicesService {
       return await this.prisma.invoice.update({
         where: { id },
         data: updateInvoiceDto,
-        include: { contract: true, tenant: { include: { user: true } }, transactions: true },
+        include: {
+          contract: true,
+          tenant: { include: { user: true } },
+          transactions: true,
+        },
       });
     } catch (error) {
       console.error('Error updating invoice:', error);
@@ -205,12 +217,12 @@ export class InvoicesService {
     }
 
     // Authorization (Admin or Manager of the contract)
-    const employeeProfile =
+    const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.employee.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
         : null;
     const isManagerOfContract =
-      employeeProfile && invoice.contract.managerId === employeeProfile.id;
+      managerProfile && invoice.contract.managerId === managerProfile.id;
 
     if (user.role !== UserRole.ADMIN && !isManagerOfContract) {
       throw new ForbiddenException(
@@ -236,4 +248,3 @@ export class InvoicesService {
     }
   }
 }
-

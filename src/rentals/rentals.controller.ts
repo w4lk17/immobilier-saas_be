@@ -21,7 +21,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 
 @Controller('rentals')
 export class RentalsController {
-  constructor(private readonly rentalsService: RentalsService) { }
+  constructor(private readonly rentalsService: RentalsService) {}
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.MANAGER) // Seuls Admin et Employee peuvent créer

@@ -21,7 +21,7 @@ import { RegisterDto } from './dto/register.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) { }
+  constructor(private authService: AuthService) {}
 
   @Public()
   @Post('register')
@@ -72,5 +72,4 @@ export class AuthController {
     // Cookies are set by authService.refreshTokens
     return { message: 'Tokens refreshed successfully' };
   }
-
 }

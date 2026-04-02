@@ -27,4 +27,3 @@ export class BillingController {
     return this.billingService.initiateMobileMoneyPayment(invoiceId, user);
   }
 }
-

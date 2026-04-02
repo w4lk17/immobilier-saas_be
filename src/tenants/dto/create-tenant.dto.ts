@@ -1,4 +1,11 @@
-import { IsString, IsEmail, IsNotEmpty, IsOptional, IsDateString, MinLength } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsDateString,
+  MinLength,
+} from 'class-validator';
 
 export class CreateTenantDto {
   // --- Champs Auth & Identité de base ---

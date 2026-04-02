@@ -20,7 +20,7 @@ import { JwtPayload } from '../auth/types';
 
 @Controller('tenants')
 export class TenantsController {
-  constructor(private readonly tenantsService: TenantsService) { }
+  constructor(private readonly tenantsService: TenantsService) {}
 
   @Post()
   @Roles(UserRole.ADMIN)
@@ -29,7 +29,7 @@ export class TenantsController {
   }
 
   @Get()
-  @Roles(UserRole.ADMIN) 
+  @Roles(UserRole.ADMIN)
   findAll() {
     return this.tenantsService.findAll();
   }

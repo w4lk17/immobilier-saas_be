@@ -44,7 +44,7 @@ export class RolesGuard implements CanActivate {
       const errorMsg = `RolesGuard: Access denied. User with role '${user.role}' is missing required role(s): [${roleList}].`;
       console.warn(errorMsg);
       throw new ForbiddenException(
-        `Access denied: your role '${user.role}' does not grant sufficient permissions. Required role(s): [${roleList}].`
+        `Access denied: your role '${user.role}' does not grant sufficient permissions. Required role(s): [${roleList}].`,
       );
     }
 

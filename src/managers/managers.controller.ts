@@ -7,50 +7,49 @@ import {
   Param,
   Delete,
   ParseIntPipe,
-  UseGuards,
 } from '@nestjs/common';
-import { OwnersService } from './owners.service';
-import { CreateOwnerDto } from './dto/create-owner.dto';
-import { UpdateOwnerDto } from './dto/update-owner.dto';
+import { ManagersService } from './managers.service';
+import { CreateManagerDto } from './dto/create-manager.dto';
+import { UpdateManagerDto } from './dto/update-manager.dto';
 import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
 import { JwtPayload } from '../auth/types';
 
-@Controller('owners')
-export class OwnersController {
-  constructor(private readonly ownersService: OwnersService) {}
+@Controller('managers')
+export class ManagersController {
+  constructor(private readonly managersService: ManagersService) {}
 
   @Post()
   @Roles(UserRole.ADMIN)
-  create(@Body() createOwnerDto: CreateOwnerDto) {
-    return this.ownersService.create(createOwnerDto);
+  create(@Body() createManagerDto: CreateManagerDto) {
+    return this.managersService.create(createManagerDto);
   }
 
   @Get()
   @Roles(UserRole.ADMIN)
   findAll() {
-    return this.ownersService.findAll();
+    return this.managersService.findAll();
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.OWNER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   findOne(
     @Param('id', ParseIntPipe) id: number,
     @GetCurrentUser() user: JwtPayload,
   ) {
-    return this.ownersService.findOne(id, user);
+    return this.managersService.findOne(id, user);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.OWNER)
+  @Roles(UserRole.ADMIN, UserRole.MANAGER)
   update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() updateOwnerDto: UpdateOwnerDto,
+    @Body() updateManagerDto: UpdateManagerDto,
     @GetCurrentUser() user: JwtPayload,
   ) {
-    return this.ownersService.update(id, updateOwnerDto, user);
+    return this.managersService.update(id, updateManagerDto, user);
   }
 
   @Patch(':id/status')
@@ -59,12 +58,12 @@ export class OwnersController {
     @Param('id', ParseIntPipe) id: number,
     @Body() updateStatusDto: UpdateStatusDto,
   ) {
-    return this.ownersService.updateStatus(id, updateStatusDto);
+    return this.managersService.updateStatus(id, updateStatusDto);
   }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN)
   remove(@Param('id', ParseIntPipe) id: number) {
-    return this.ownersService.remove(id);
+    return this.managersService.remove(id);
   }
 }

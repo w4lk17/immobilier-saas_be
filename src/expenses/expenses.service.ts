@@ -13,7 +13,7 @@ import { JwtPayload } from '../auth/types';
 
 @Injectable()
 export class ExpensesService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   async create(
     createExpenseDto: CreateExpenseDto,
@@ -78,11 +78,11 @@ export class ExpensesService {
       if (!ownerProfile) return [];
       whereClause.property = { ownerId: ownerProfile.id };
     } else if (user.role === UserRole.MANAGER) {
-      const employeeProfile = await this.prisma.employee.findUnique({
+      const managerProfile = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
-      if (!employeeProfile) return [];
-      whereClause.property = { managerId: employeeProfile.id };
+      if (!managerProfile) return [];
+      whereClause.property = { managerId: managerProfile.id };
     }
     // ADMIN voit tout (whereClause vide)
 
@@ -138,7 +138,9 @@ export class ExpensesService {
         });
         if (!rental) throw new NotFoundException('Rental non trouvé');
         if (rental.propertyId !== existingExpense.propertyId) {
-          throw new BadRequestException("Le rental n'appartient pas à cette propriété.");
+          throw new BadRequestException(
+            "Le rental n'appartient pas à cette propriété.",
+          );
         }
       }
     }
@@ -155,7 +157,9 @@ export class ExpensesService {
       });
     } catch (error) {
       console.error('Error updating expense:', error);
-      throw new InternalServerErrorException('Impossible de mettre à jour la dépense.');
+      throw new InternalServerErrorException(
+        'Impossible de mettre à jour la dépense.',
+      );
     }
   }
 
@@ -176,7 +180,9 @@ export class ExpensesService {
       });
     } catch (error) {
       console.error('Error deleting expense:', error);
-      throw new InternalServerErrorException('Impossible de supprimer la dépense.');
+      throw new InternalServerErrorException(
+        'Impossible de supprimer la dépense.',
+      );
     }
   }
 
@@ -206,7 +212,9 @@ export class ExpensesService {
     });
 
     if (!rental) {
-      throw new NotFoundException(`Unité locative avec l'ID "${rentalId}" introuvable.`);
+      throw new NotFoundException(
+        `Unité locative avec l'ID "${rentalId}" introuvable.`,
+      );
     }
 
     // Vérifie les droits de lecture sur la propriété parente
@@ -282,7 +290,9 @@ export class ExpensesService {
     });
 
     if (!property) {
-      throw new NotFoundException(`Propriété avec l'ID "${propertyId}" introuvable.`);
+      throw new NotFoundException(
+        `Propriété avec l'ID "${propertyId}" introuvable.`,
+      );
     }
 
     if (user.role === UserRole.ADMIN) {
@@ -292,24 +302,26 @@ export class ExpensesService {
     // Si on exige des droits de gestion (Write)
     if (requireManagement) {
       if (user.role === UserRole.MANAGER) {
-        const employeeProfile = await this.prisma.employee.findUnique({
+        const managerProfile = await this.prisma.manager.findUnique({
           where: { userId: user.sub },
         });
-        if (employeeProfile && property.managerId === employeeProfile.id) {
+        if (managerProfile && property.managerId === managerProfile.id) {
           return { property };
         }
       }
       // Si Owner ou Employee non assigné -> Interdit
-      throw new ForbiddenException("Vous n'avez pas les droits pour effectuer cette action sur cette propriété.");
+      throw new ForbiddenException(
+        "Vous n'avez pas les droits pour effectuer cette action sur cette propriété.",
+      );
     }
 
     // Si on exige juste des droits de lecture (Read)
     if (!requireManagement) {
       if (user.role === UserRole.MANAGER) {
-        const employeeProfile = await this.prisma.employee.findUnique({
+        const managerProfile = await this.prisma.manager.findUnique({
           where: { userId: user.sub },
         });
-        if (employeeProfile && property.managerId === employeeProfile.id) {
+        if (managerProfile && property.managerId === managerProfile.id) {
           return { property };
         }
       } else if (user.role === UserRole.OWNER) {
@@ -322,6 +334,6 @@ export class ExpensesService {
       }
     }
 
-    throw new ForbiddenException("Accès non autorisé à cette propriété.");
+    throw new ForbiddenException('Accès non autorisé à cette propriété.');
   }
 }

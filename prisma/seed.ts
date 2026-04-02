@@ -69,7 +69,7 @@ async function main() {
   await prisma.contract.deleteMany({});
   await prisma.rental.deleteMany({});
   await prisma.property.deleteMany({});
-  await prisma.employee.deleteMany({});
+  await prisma.manager.deleteMany({});
   await prisma.owner.deleteMany({});
   await prisma.tenant.deleteMany({});
   await prisma.user.deleteMany({});
@@ -122,7 +122,7 @@ async function main() {
   // 4. Créer les profils
   console.log('Création des profils...');
 
-  const employee1 = await prisma.employee.create({
+  const manager1 = await prisma.manager.create({
     data: {
       userId: employeeUser1.id,
       position: 'Gestionnaire Principal',
@@ -132,7 +132,7 @@ async function main() {
     },
   });
 
-  const employee2 = await prisma.employee.create({
+  const manager2 = await prisma.manager.create({
     data: {
       userId: employeeUser2.id,
       position: 'Assistant Gestionnaire',
@@ -168,7 +168,7 @@ async function main() {
   const property1 = await prisma.property.create({
     data: {
       ownerId: owner1.id,
-      managerId: employee1.id,
+      managerId: manager1.id,
       address: faker.location.streetAddress(true),
       type: PropertyType.BUILDING,
       description: faker.lorem.paragraphs(2),
@@ -180,7 +180,7 @@ async function main() {
   const property2 = await prisma.property.create({
     data: {
       ownerId: owner1.id,
-      managerId: employee1.id,
+      managerId: manager1.id,
       address: faker.location.streetAddress(true),
       type: PropertyType.LOW_HOUSE,
       description: faker.lorem.paragraphs(2),
@@ -192,7 +192,7 @@ async function main() {
   const property3 = await prisma.property.create({
     data: {
       ownerId: owner2.id,
-      managerId: employee2.id,
+      managerId: manager2.id,
       address: faker.location.streetAddress(true),
       type: PropertyType.LOW_HOUSE,
       description: faker.lorem.paragraphs(2),
@@ -273,7 +273,7 @@ async function main() {
       propertyId: property1.id,
       rentalId: rental1.id,
       tenantId: tenant1.id,
-      managerId: employee1.id,
+      managerId: manager1.id,
       startDate: faker.date.past({ years: 1 }),
       endDate: faker.date.future({ years: 1 }),
       rentAmount: 850.00,
@@ -302,7 +302,7 @@ async function main() {
       propertyId: property2.id,
       rentalId: rental3.id,
       tenantId: tenant2.id,
-      managerId: employee1.id,
+      managerId: manager1.id,
       startDate: pastStartDate,
       endDate: pastEndDate,
       rentAmount: 1800.00,

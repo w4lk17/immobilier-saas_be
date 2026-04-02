@@ -18,7 +18,7 @@ import { JwtPayload } from '../auth/types';
 
 @Controller('expenses')
 export class ExpensesController {
-  constructor(private readonly expensesService: ExpensesService) { }
+  constructor(private readonly expensesService: ExpensesService) {}
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.MANAGER) // Seuls Admin et Employee peuvent créer

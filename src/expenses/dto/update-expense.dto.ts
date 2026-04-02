@@ -5,4 +5,4 @@ import { CreateExpenseDto } from './create-expense.dto';
 // C'est une preuve comptable.
 export class UpdateExpenseDto extends PartialType(
   OmitType(CreateExpenseDto, ['propertyId', 'recordedById'] as const),
-) { }
+) {}

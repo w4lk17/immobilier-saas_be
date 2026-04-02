@@ -16,7 +16,7 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class OwnersService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   // Helper pour nettoyer la réponse
   private formatOwnerResponse(owner: any) {
@@ -64,8 +64,12 @@ export class OwnersService {
           identityDocumentNumber: dto.identityDocumentNumber,
           identityDocumentType: dto.identityDocumentType,
           identityDeliveryCity: dto.identityDeliveryCity,
-          identityDeliveryDate: dto.identityDeliveryDate ? new Date(dto.identityDeliveryDate) : null,
-          identityExpiryDate: dto.identityExpiryDate ? new Date(dto.identityExpiryDate) : null,
+          identityDeliveryDate: dto.identityDeliveryDate
+            ? new Date(dto.identityDeliveryDate)
+            : null,
+          identityExpiryDate: dto.identityExpiryDate
+            ? new Date(dto.identityExpiryDate)
+            : null,
           pacLastName: dto.pacLastName,
           pacFirstName: dto.pacFirstName,
           pacPhoneNumber: dto.pacPhoneNumber,
@@ -86,10 +90,11 @@ export class OwnersService {
         ...ownerProfile,
         user: userData,
       });
-
     } catch (error) {
       console.error('Error creating owner:', error);
-      throw new InternalServerErrorException("Erreur lors de la création du propriétaire");
+      throw new InternalServerErrorException(
+        'Erreur lors de la création du propriétaire',
+      );
     }
   }
 
@@ -101,7 +106,7 @@ export class OwnersService {
       include: {
         user: true,
         // Optionnel: compter les propriétés
-        _count: { select: { properties: true } }
+        _count: { select: { properties: true } },
       },
       orderBy: {
         user: {
@@ -125,7 +130,9 @@ export class OwnersService {
     });
 
     if (!owner) {
-      throw new NotFoundException(`Propriétaire avec l'ID "${id}" introuvable.`);
+      throw new NotFoundException(
+        `Propriétaire avec l'ID "${id}" introuvable.`,
+      );
     }
 
     // Droit d'accès : Admin OU c'est son propre profil
@@ -140,14 +147,20 @@ export class OwnersService {
   // ==========================================
   // UPDATE (Admin ou Self)
   // ==========================================
-  async update(id: number, dto: UpdateOwnerDto, currentUser: JwtPayload): Promise<any> {
+  async update(
+    id: number,
+    dto: UpdateOwnerDto,
+    currentUser: JwtPayload,
+  ): Promise<any> {
     const owner = await this.prisma.owner.findUnique({
       where: { id },
       include: { user: true },
     });
 
     if (!owner) {
-      throw new NotFoundException(`Propriétaire avec l'ID "${id}" introuvable.`);
+      throw new NotFoundException(
+        `Propriétaire avec l'ID "${id}" introuvable.`,
+      );
     }
 
     const isAdmin = currentUser.role === UserRole.ADMIN;
@@ -169,11 +182,16 @@ export class OwnersService {
     if (dto.pictureUrl) userData.pictureUrl = dto.pictureUrl;
     if (dto.workPlace) userData.workPlace = dto.workPlace;
     if (dto.occupation) userData.occupation = dto.occupation;
-    if (dto.identityDocumentNumber) userData.identityDocumentNumber = dto.identityDocumentNumber;
-    if (dto.identityDocumentType) userData.identityDocumentType = dto.identityDocumentType;
-    if (dto.identityDeliveryCity) userData.identityDeliveryCity = dto.identityDeliveryCity;
-    if (dto.identityDeliveryDate) userData.identityDeliveryDate = new Date(dto.identityDeliveryDate);
-    if (dto.identityExpiryDate) userData.identityExpiryDate = new Date(dto.identityExpiryDate);
+    if (dto.identityDocumentNumber)
+      userData.identityDocumentNumber = dto.identityDocumentNumber;
+    if (dto.identityDocumentType)
+      userData.identityDocumentType = dto.identityDocumentType;
+    if (dto.identityDeliveryCity)
+      userData.identityDeliveryCity = dto.identityDeliveryCity;
+    if (dto.identityDeliveryDate)
+      userData.identityDeliveryDate = new Date(dto.identityDeliveryDate);
+    if (dto.identityExpiryDate)
+      userData.identityExpiryDate = new Date(dto.identityExpiryDate);
     if (dto.pacLastName) userData.pacLastName = dto.pacLastName;
     if (dto.pacFirstName) userData.pacFirstName = dto.pacFirstName;
     if (dto.pacPhoneNumber) userData.pacPhoneNumber = dto.pacPhoneNumber;
@@ -192,13 +210,12 @@ export class OwnersService {
         const { ownerProfile, ...userFields } = updatedUser;
         return this.formatOwnerResponse({
           ...ownerProfile,
-          user: userFields
+          user: userFields,
         });
       }
 
       // Si rien à modifier, on retourne l'existant
       return this.formatOwnerResponse(owner);
-
     } catch (error) {
       console.error('Error updating owner:', error);
       throw new InternalServerErrorException('Erreur lors de la mise à jour.');
@@ -214,7 +231,9 @@ export class OwnersService {
     });
 
     if (!owner) {
-      throw new NotFoundException(`Propriétaire avec l'ID "${id}" introuvable.`);
+      throw new NotFoundException(
+        `Propriétaire avec l'ID "${id}" introuvable.`,
+      );
     }
 
     try {
@@ -227,12 +246,13 @@ export class OwnersService {
       const { ownerProfile, ...userFields } = updatedUser;
       return this.formatOwnerResponse({
         ...ownerProfile,
-        user: userFields
+        user: userFields,
       });
-
     } catch (error) {
       console.error('Error updating status:', error);
-      throw new InternalServerErrorException('Erreur lors du changement de statut.');
+      throw new InternalServerErrorException(
+        'Erreur lors du changement de statut.',
+      );
     }
   }
 
@@ -244,17 +264,21 @@ export class OwnersService {
       where: { id },
       include: {
         user: true,
-        properties: true // Vérifier s'il a des biens
+        properties: true, // Vérifier s'il a des biens
       },
     });
 
     if (!owner) {
-      throw new NotFoundException(`Propriétaire avec l'ID "${id}" introuvable.`);
+      throw new NotFoundException(
+        `Propriétaire avec l'ID "${id}" introuvable.`,
+      );
     }
 
     // Optionnel : Empêcher suppression s'il a des biens actifs
     if (owner.properties.length > 0) {
-      throw new BadRequestException("Impossible de supprimer ce propriétaire car il possède des biens immobiliers.");
+      throw new BadRequestException(
+        'Impossible de supprimer ce propriétaire car il possède des biens immobiliers.',
+      );
     }
 
     try {
@@ -270,12 +294,14 @@ export class OwnersService {
         });
       });
 
-      return { message: `Profil propriétaire ${id} supprimé. L'utilisateur a été rétrogradé.` };
+      return {
+        message: `Profil propriétaire ${id} supprimé. L'utilisateur a été rétrogradé.`,
+      };
     } catch (error) {
       console.error('Error removing owner:', error);
       if (error.code === 'P2003') {
         throw new BadRequestException(
-          "Impossible de supprimer ce propriétaire à cause de relations existantes.",
+          'Impossible de supprimer ce propriétaire à cause de relations existantes.',
         );
       }
       throw new InternalServerErrorException('Erreur lors de la suppression.');

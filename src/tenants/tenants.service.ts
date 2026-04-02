@@ -16,7 +16,7 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class TenantsService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   // Helper pour nettoyer la réponse
   private formatTenantResponse(tenant: any) {
@@ -64,8 +64,12 @@ export class TenantsService {
           identityDocumentNumber: dto.identityDocumentNumber,
           identityDocumentType: dto.identityDocumentType,
           identityDeliveryCity: dto.identityDeliveryCity,
-          identityDeliveryDate: dto.identityDeliveryDate ? new Date(dto.identityDeliveryDate) : null,
-          identityExpiryDate: dto.identityExpiryDate ? new Date(dto.identityExpiryDate) : null,
+          identityDeliveryDate: dto.identityDeliveryDate
+            ? new Date(dto.identityDeliveryDate)
+            : null,
+          identityExpiryDate: dto.identityExpiryDate
+            ? new Date(dto.identityExpiryDate)
+            : null,
           pacLastName: dto.pacLastName,
           pacFirstName: dto.pacFirstName,
           pacPhoneNumber: dto.pacPhoneNumber,
@@ -88,10 +92,11 @@ export class TenantsService {
         ...tenantProfile,
         user: userData,
       });
-
     } catch (error) {
       console.error('Error creating tenant:', error);
-      throw new InternalServerErrorException("Erreur lors de la création du locataire");
+      throw new InternalServerErrorException(
+        'Erreur lors de la création du locataire',
+      );
     }
   }
 
@@ -122,11 +127,11 @@ export class TenantsService {
         user: true,
         contracts: {
           include: { property: { select: { address: true } } },
-          orderBy: { startDate: 'desc' }
+          orderBy: { startDate: 'desc' },
         },
         invoices: {
           orderBy: { createdAt: 'desc' },
-          take: 5
+          take: 5,
         },
       },
     });
@@ -147,7 +152,11 @@ export class TenantsService {
   // ==========================================
   // UPDATE (Admin ou Self)
   // ==========================================
-  async update(id: number, dto: UpdateTenantDto, currentUser: JwtPayload): Promise<any> {
+  async update(
+    id: number,
+    dto: UpdateTenantDto,
+    currentUser: JwtPayload,
+  ): Promise<any> {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id },
       include: { user: true },
@@ -178,11 +187,16 @@ export class TenantsService {
     if (dto.pictureUrl) userData.pictureUrl = dto.pictureUrl;
     if (dto.workPlace) userData.workPlace = dto.workPlace;
     if (dto.occupation) userData.occupation = dto.occupation;
-    if (dto.identityDocumentNumber) userData.identityDocumentNumber = dto.identityDocumentNumber;
-    if (dto.identityDocumentType) userData.identityDocumentType = dto.identityDocumentType;
-    if (dto.identityDeliveryCity) userData.identityDeliveryCity = dto.identityDeliveryCity;
-    if (dto.identityDeliveryDate) userData.identityDeliveryDate = new Date(dto.identityDeliveryDate);
-    if (dto.identityExpiryDate) userData.identityExpiryDate = new Date(dto.identityExpiryDate);
+    if (dto.identityDocumentNumber)
+      userData.identityDocumentNumber = dto.identityDocumentNumber;
+    if (dto.identityDocumentType)
+      userData.identityDocumentType = dto.identityDocumentType;
+    if (dto.identityDeliveryCity)
+      userData.identityDeliveryCity = dto.identityDeliveryCity;
+    if (dto.identityDeliveryDate)
+      userData.identityDeliveryDate = new Date(dto.identityDeliveryDate);
+    if (dto.identityExpiryDate)
+      userData.identityExpiryDate = new Date(dto.identityExpiryDate);
     if (dto.pacLastName) userData.pacLastName = dto.pacLastName;
     if (dto.pacFirstName) userData.pacFirstName = dto.pacFirstName;
     if (dto.pacPhoneNumber) userData.pacPhoneNumber = dto.pacPhoneNumber;
@@ -210,7 +224,7 @@ export class TenantsService {
         // Si seul l'user a changé
         return await tx.tenant.findUnique({
           where: { id },
-          include: { user: true }
+          include: { user: true },
         });
       });
 
@@ -243,12 +257,13 @@ export class TenantsService {
       const { tenantProfile, ...userFields } = updatedUser;
       return this.formatTenantResponse({
         ...tenantProfile,
-        user: userFields
+        user: userFields,
       });
-
     } catch (error) {
       console.error('Error updating status:', error);
-      throw new InternalServerErrorException('Erreur lors du changement de statut.');
+      throw new InternalServerErrorException(
+        'Erreur lors du changement de statut.',
+      );
     }
   }
 
@@ -278,12 +293,14 @@ export class TenantsService {
         });
       });
 
-      return { message: `Profil locataire ${id} supprimé. L'utilisateur a été rétrogradé.` };
+      return {
+        message: `Profil locataire ${id} supprimé. L'utilisateur a été rétrogradé.`,
+      };
     } catch (error) {
       console.error('Error removing tenant:', error);
       if (error.code === 'P2003') {
         throw new BadRequestException(
-          "Impossible de supprimer ce locataire car il a des contrats ou factures liés.",
+          'Impossible de supprimer ce locataire car il a des contrats ou factures liés.',
         );
       }
       throw new InternalServerErrorException('Erreur lors de la suppression.');

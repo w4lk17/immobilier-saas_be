@@ -1,9 +1,15 @@
-// src/employees/dto/create-manager.dto.ts
-import { IsString, IsEmail, IsNotEmpty, IsEnum, IsOptional, IsDateString, MinLength } from 'class-validator';
+import {
+  IsString,
+  IsEmail,
+  IsNotEmpty,
+  IsEnum,
+  IsOptional,
+  IsDateString,
+  MinLength,
+} from 'class-validator';
 import { EmploymentType } from '@prisma/client';
 
-export class CreateEmployeeDto {
-  // --- Champs Auth & Identité de base ---
+export class CreateManagerDto {
   @IsEmail()
   @IsNotEmpty()
   email: string;
@@ -41,7 +47,6 @@ export class CreateEmployeeDto {
   @IsOptional()
   pictureUrl?: string;
 
-  // --- Champs Professionnels (User) ---
   @IsString()
   @IsOptional()
   workPlace?: string;
@@ -50,7 +55,6 @@ export class CreateEmployeeDto {
   @IsOptional()
   occupation?: string;
 
-  // --- Documents d'identité ---
   @IsString()
   @IsOptional()
   identityDocumentNumber?: string;
@@ -71,7 +75,6 @@ export class CreateEmployeeDto {
   @IsOptional()
   identityExpiryDate?: string;
 
-  // --- Personne à contacter (PAC) ---
   @IsString()
   @IsOptional()
   pacLastName?: string;
@@ -84,7 +87,6 @@ export class CreateEmployeeDto {
   @IsOptional()
   pacPhoneNumber?: string;
 
-  // --- Champs spécifiques Employé ---
   @IsString()
   @IsNotEmpty()
   position: string;

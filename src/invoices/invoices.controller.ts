@@ -63,4 +63,3 @@ export class InvoicesController {
     return this.invoicesService.remove(id, user);
   }
 }
-

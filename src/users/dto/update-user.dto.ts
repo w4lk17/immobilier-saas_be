@@ -18,7 +18,7 @@ export class UpdateUserDto {
   @IsOptional()
   address?: string;
 
-  // L'admin seul peut changer le rôle via ce DTO, 
+  // L'admin seul peut changer le rôle via ce DTO,
   // mais il vaut mieux une route dédiée ou un control strict dans le service.
   // Pour la sécurité, on peut l'exclure ici et le gérer ailleurs.
 }

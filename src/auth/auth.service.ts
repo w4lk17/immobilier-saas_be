@@ -22,7 +22,7 @@ export class AuthService {
     private usersService: UsersService, // Use UsersService for user operations
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) { }
+  ) {}
 
   async validateUser(email: string, pass: string): Promise<User | null> {
     const user = await this.usersService.findByEmail(email);
@@ -33,9 +33,12 @@ export class AuthService {
     return null;
   }
 
-  async register(dto: RegisterDto): Promise<Omit<User, 'password' | 'refreshToken'>> {
+  async register(
+    dto: RegisterDto,
+  ): Promise<Omit<User, 'password' | 'refreshToken'>> {
     const existingUser = await this.usersService.findByEmail(dto.email);
-    if (existingUser) throw new ConflictException('un utilisateur avec cet email existe déjà.');
+    if (existingUser)
+      throw new ConflictException('un utilisateur avec cet email existe déjà.');
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(dto.password, salt);
@@ -47,20 +50,22 @@ export class AuthService {
           password: hashedPassword,
           firstName: dto.firstName,
           lastName: dto.lastName,
-          role: UserRole.ADMIN // Rôle par défaut pour l'inscription publique
+          role: UserRole.ADMIN, // Rôle par défaut pour l'inscription publique
         },
-      })
+      });
 
       const { password, refreshToken, ...result } = newUser;
       return result;
-
     } catch (error) {
       console.error('Error registering user:', error);
       throw new InternalServerErrorException("Erreur lors de l'inscription.");
     }
   }
 
-  async login(user: Omit<User, 'password' | 'refreshToken'>, response: any): Promise<void> {
+  async login(
+    user: Omit<User, 'password' | 'refreshToken'>,
+    response: any,
+  ): Promise<void> {
     // response is Express Response
     const tokens = await this._generateTokens({
       sub: user.id,
@@ -113,8 +118,9 @@ export class AuthService {
       await this.usersService.updateRefreshTokenHash(userId, null);
     }
     this._clearCookies(response);
-    console.log(`Logout processed. User ID: ${userId || 'Unknown (Public Route)'}`);
-
+    console.log(
+      `Logout processed. User ID: ${userId || 'Unknown (Public Route)'}`,
+    );
   }
 
   // --- Helper Methods ---
@@ -150,7 +156,7 @@ export class AuthService {
   }
 
   private _setCookies(response: any, tokens: Tokens): void {
-    const isProduction = this.configService.get('NODE_ENV') === 'production'
+    const isProduction = this.configService.get('NODE_ENV') === 'production';
 
     const cookieOptions = {
       httpOnly: true,
@@ -176,8 +182,15 @@ export class AuthService {
   }
 
   private _clearCookies(response: any): void {
-    const clearOptions = { httpOnly: true, secure: true, sameSite: 'none' as const };
+    const clearOptions = {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none' as const,
+    };
     response.clearCookie('accessToken', { ...clearOptions, path: '/' });
-    response.clearCookie('refreshToken', { ...clearOptions, path: '/api/auth' });
+    response.clearCookie('refreshToken', {
+      ...clearOptions,
+      path: '/api/auth',
+    });
   }
 }

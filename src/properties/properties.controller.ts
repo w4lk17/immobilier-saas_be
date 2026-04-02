@@ -18,7 +18,7 @@ import { JwtPayload } from '../auth/types';
 
 @Controller('properties')
 export class PropertiesController {
-  constructor(private readonly propertiesService: PropertiesService) { }
+  constructor(private readonly propertiesService: PropertiesService) {}
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.MANAGER) // Seuls Admin et Manager peuvent créer

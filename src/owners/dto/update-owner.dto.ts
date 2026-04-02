@@ -5,4 +5,4 @@ import { CreateOwnerDto } from './create-owner.dto';
 // On exclut 'email' si tu veux empêcher le changement d'email (souvent sensible)
 export class UpdateOwnerDto extends PartialType(
   OmitType(CreateOwnerDto, ['password', 'email'] as const),
-) { }
+) {}

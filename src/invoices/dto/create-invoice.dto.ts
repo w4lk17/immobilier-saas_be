@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsNumber, IsDateString, IsEnum, IsOptional, IsInt } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsInt,
+} from 'class-validator';
 import { InvoiceType, InvoiceStatus } from '@prisma/client';
 
 export class CreateInvoiceDto {

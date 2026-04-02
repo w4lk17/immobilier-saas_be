@@ -1,4 +1,11 @@
-import { IsString, IsNotEmpty, IsNumber, IsEnum, IsOptional, IsInt } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsEnum,
+  IsOptional,
+  IsInt,
+} from 'class-validator';
 import { RentalType, RentalStatus } from '@prisma/client';
 
 export class CreateRentalDto {

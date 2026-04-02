@@ -45,7 +45,7 @@ The application follows NestJS's modular architecture:
 
 - **`src/auth/`** - Authentication with JWT (access + refresh tokens stored in httpOnly cookies)
 - **`src/users/`** - Core user management with self-service methods (`getMe`, `updateMe`, `changePassword`)
-- **`src/employees/`**, **`src/owners/`**, **`src/tenants/`** - Role-specific profiles (1:1 with User)
+- **`src/managers/`**, **`src/owners/`**, **`src/tenants/`** - Role-specific profiles (1:1 with User)
 - **`src/properties/`** - Property management
 - **`src/rentals/`** - Rental units within properties
 - **`src/contracts/`** - Lease contracts linking owners, tenants, properties, and rentals

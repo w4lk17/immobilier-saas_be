@@ -37,7 +37,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true, isActive: true /* select needed fields */ },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        isActive: true /* select needed fields */,
+      },
     });
 
     if (!user) {
@@ -45,13 +50,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('User not found or invalid token');
     }
 
-    // On retourne un objet propre. 
+    // On retourne un objet propre.
     // On mappe 'sub' du token vers 'id' de notre objet user pour faciliter la lecture dans les contrôleurs.
     return {
       id: user.id,
       email: user.email,
       role: user.role,
-      isActive: user.isActive
+      isActive: user.isActive,
     };
   }
 }

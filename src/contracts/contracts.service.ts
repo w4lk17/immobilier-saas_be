@@ -51,7 +51,7 @@ function computeFirstRentDueDate(
 
 @Injectable()
 export class ContractsService {
-  constructor(private prisma: PrismaService) { }
+  constructor(private prisma: PrismaService) {}
 
   async create(
     createContractDto: CreateContractDto,
@@ -80,7 +80,8 @@ export class ContractsService {
     });
     if (!property)
       throw new NotFoundException(
-        `Property with ID ${createContractDto.propertyId} not found.`)
+        `Property with ID ${createContractDto.propertyId} not found.`,
+      );
 
     // Ensure property belongs to the specified owner
     if (property.ownerId !== createContractDto.ownerId) {
@@ -108,11 +109,11 @@ export class ContractsService {
 
     // For MANAGER role, ensure they are assigned to manage this rental's property
     if (user.role === UserRole.MANAGER) {
-      const employeeProfile = await this.prisma.employee.findUnique({
+      const managerProfile = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
 
-      if (!employeeProfile || rental.property.managerId !== employeeProfile.id) {
+      if (!managerProfile || rental.property.managerId !== managerProfile.id) {
         throw new ForbiddenException(
           `You are not authorized to manage contracts for this rental.`,
         );
@@ -136,12 +137,12 @@ export class ContractsService {
       );
 
     // Validate Manager exists
-    const manager = await this.prisma.employee.findUnique({
+    const manager = await this.prisma.manager.findUnique({
       where: { id: createContractDto.managerId },
     });
     if (!manager)
       throw new NotFoundException(
-        `Manager (Employee) with ID ${createContractDto.managerId} not found.`,
+        `Manager with ID ${createContractDto.managerId} not found.`,
       );
 
     // 2. Business Logic Validation
@@ -161,94 +162,96 @@ export class ContractsService {
     }
 
     try {
-      const contractWithInvoices = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.contract.create({
-          data: createContractDto,
-        });
+      const contractWithInvoices = await this.prisma.$transaction(
+        async (tx) => {
+          const created = await tx.contract.create({
+            data: createContractDto,
+          });
 
-        // Update rental status to OCCUPIED
-        await tx.rental.update({
-          where: { id: createContractDto.rentalId },
-          data: { status: RentalStatus.OCCUPIED },
-        });
+          // Update rental status to OCCUPIED
+          await tx.rental.update({
+            where: { id: createContractDto.rentalId },
+            data: { status: RentalStatus.OCCUPIED },
+          });
 
-        // Create initial invoices:
-        // - Deposit invoice due at start date
-        // - First rent invoice due after paymentStartAfter logic
-        const startDate = new Date(createContractDto.startDate);
-        const depositDueDate = startDate;
-        const firstRentDueDate = computeFirstRentDueDate(
-          startDate,
-          createContractDto.paymentStartAfter,
-          createContractDto.dayAddToPaymentDay,
-        );
+          // Create initial invoices:
+          // - Deposit invoice due at start date
+          // - First rent invoice due after paymentStartAfter logic
+          const startDate = new Date(createContractDto.startDate);
+          const depositDueDate = startDate;
+          const firstRentDueDate = computeFirstRentDueDate(
+            startDate,
+            createContractDto.paymentStartAfter,
+            createContractDto.dayAddToPaymentDay,
+          );
 
-        await tx.invoice.createMany({
-          data: [
-            {
-              invoiceNumber: makeInvoiceNumber('DEP'),
-              contractId: created.id,
-              tenantId: created.tenantId,
-              amountDue: created.depositAmount,
-              paidAmount: 0,
-              type: InvoiceType.DEPOSIT,
-              dueDate: depositDueDate,
-            },
-            {
-              invoiceNumber: makeInvoiceNumber('RENT'),
-              contractId: created.id,
-              tenantId: created.tenantId,
-              amountDue: created.rentAmount + rental.charges,
-              paidAmount: 0,
-              type: InvoiceType.RENT,
-              dueDate: firstRentDueDate,
-            },
-          ],
-        });
+          await tx.invoice.createMany({
+            data: [
+              {
+                invoiceNumber: makeInvoiceNumber('DEP'),
+                contractId: created.id,
+                tenantId: created.tenantId,
+                amountDue: created.depositAmount,
+                paidAmount: 0,
+                type: InvoiceType.DEPOSIT,
+                dueDate: depositDueDate,
+              },
+              {
+                invoiceNumber: makeInvoiceNumber('RENT'),
+                contractId: created.id,
+                tenantId: created.tenantId,
+                amountDue: created.rentAmount + rental.charges,
+                paidAmount: 0,
+                type: InvoiceType.RENT,
+                dueDate: firstRentDueDate,
+              },
+            ],
+          });
 
-        return tx.contract.findUnique({
-          where: { id: created.id },
-          include: {
-            owner: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    email: true,
+          return tx.contract.findUnique({
+            where: { id: created.id },
+            include: {
+              owner: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      email: true,
+                    },
                   },
                 },
               },
-            },
-            property: {
-              include: {
-                owner: {
-                  include: {
-                    user: {
-                      select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true,
-                        email: true,
+              property: {
+                include: {
+                  owner: {
+                    include: {
+                      user: {
+                        select: {
+                          id: true,
+                          firstName: true,
+                          lastName: true,
+                          email: true,
+                        },
                       },
                     },
                   },
                 },
               },
-            },
-            rental: {
-              include: {
-                property: {
-                  include: {
-                    owner: {
-                      include: {
-                        user: {
-                          select: {
-                            id: true,
-                            firstName: true,
-                            lastName: true,
-                            email: true,
+              rental: {
+                include: {
+                  property: {
+                    include: {
+                      owner: {
+                        include: {
+                          user: {
+                            select: {
+                              id: true,
+                              firstName: true,
+                              lastName: true,
+                              email: true,
+                            },
                           },
                         },
                       },
@@ -256,41 +259,41 @@ export class ContractsService {
                   },
                 },
               },
-            },
-            tenant: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    email: true,
+              tenant: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      email: true,
+                    },
                   },
                 },
               },
-            },
-            manager: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    email: true,
+              manager: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      email: true,
+                    },
                   },
                 },
               },
+              invoices: {
+                orderBy: { dueDate: 'desc' },
+                include: { transactions: true },
+              },
+              _count: {
+                select: { invoices: true },
+              },
             },
-            invoices: {
-              orderBy: { dueDate: 'desc' },
-              include: { transactions: true },
-            },
-            _count: {
-              select: { invoices: true },
-            },
-          },
-        });
-      });
+          });
+        },
+      );
 
       if (!contractWithInvoices) {
         throw new InternalServerErrorException('Could not create contract.');
@@ -314,7 +317,12 @@ export class ContractsService {
         owner: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
@@ -327,14 +335,24 @@ export class ContractsService {
         tenant: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
         manager: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
@@ -351,9 +369,9 @@ export class ContractsService {
       user.role === UserRole.OWNER
         ? await this.prisma.owner.findUnique({ where: { userId: user.sub } })
         : null;
-    const employeeProfile =
+    const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.employee.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
         : null;
     const tenantProfile =
       user.role === UserRole.TENANT
@@ -365,9 +383,9 @@ export class ContractsService {
     if (user.role === UserRole.OWNER && ownerProfile) {
       // Owners see contracts for their properties
       whereClause.ownerId = ownerProfile.id;
-    } else if (user.role === UserRole.MANAGER && employeeProfile) {
+    } else if (user.role === UserRole.MANAGER && managerProfile) {
       // Managers see contracts for properties they manage
-      whereClause.property = { managerId: employeeProfile.id };
+      whereClause.property = { managerId: managerProfile.id };
     } else if (user.role === UserRole.TENANT && tenantProfile) {
       // Tenants see only their own contracts
       whereClause.tenantId = tenantProfile.id;
@@ -380,7 +398,12 @@ export class ContractsService {
         owner: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
@@ -393,14 +416,24 @@ export class ContractsService {
         tenant: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
         manager: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
@@ -419,7 +452,12 @@ export class ContractsService {
         owner: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
@@ -432,14 +470,24 @@ export class ContractsService {
         tenant: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
         manager: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, email: true },
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
             },
           },
         },
@@ -482,11 +530,14 @@ export class ContractsService {
 
     // For MANAGER role, ensure they manage this contract's property
     if (user.role === UserRole.MANAGER) {
-      const employeeProfile = await this.prisma.employee.findUnique({
+      const managerProfile = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
 
-      if (!employeeProfile || (contract as any).property.managerId !== employeeProfile.id) {
+      if (
+        !managerProfile ||
+        (contract as any).property.managerId !== managerProfile.id
+      ) {
         throw new ForbiddenException(
           `You are not authorized to manage this contract.`,
         );
@@ -494,8 +545,10 @@ export class ContractsService {
     }
 
     // Additional validation for status changes
-    if (updateContractDto.status === ContractStatus.TERMINATED ||
-      updateContractDto.status === ContractStatus.EXPIRED) {
+    if (
+      updateContractDto.status === ContractStatus.TERMINATED ||
+      updateContractDto.status === ContractStatus.EXPIRED
+    ) {
       // Update rental status back to AVAILABLE when contract ends
       await this.prisma.rental.update({
         where: { id: contract.rentalId },
@@ -513,7 +566,12 @@ export class ContractsService {
           owner: {
             include: {
               user: {
-                select: { id: true, firstName: true, lastName: true, email: true },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
@@ -526,14 +584,24 @@ export class ContractsService {
           tenant: {
             include: {
               user: {
-                select: { id: true, firstName: true, lastName: true, email: true },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
           manager: {
             include: {
               user: {
-                select: { id: true, firstName: true, lastName: true, email: true },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
@@ -570,11 +638,14 @@ export class ContractsService {
 
     // For MANAGER role, ensure they manage this contract's property
     if (user.role === UserRole.MANAGER) {
-      const employeeProfile = await this.prisma.employee.findUnique({
+      const managerProfile = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
 
-      if (!employeeProfile || (contract as any).property.managerId !== employeeProfile.id) {
+      if (
+        !managerProfile ||
+        (contract as any).property.managerId !== managerProfile.id
+      ) {
         throw new ForbiddenException(
           `You are not authorized to terminate this contract.`,
         );
@@ -602,7 +673,12 @@ export class ContractsService {
           owner: {
             include: {
               user: {
-                select: { id: true, firstName: true, lastName: true, email: true },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
@@ -615,14 +691,24 @@ export class ContractsService {
           tenant: {
             include: {
               user: {
-                select: { id: true, firstName: true, lastName: true, email: true },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
           manager: {
             include: {
               user: {
-                select: { id: true, firstName: true, lastName: true, email: true },
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
               },
             },
           },
@@ -651,9 +737,7 @@ export class ContractsService {
   async remove(id: number, user: JwtPayload): Promise<Contract> {
     // RBAC Check: Only ADMIN can delete contracts
     if (user.role !== UserRole.ADMIN) {
-      throw new ForbiddenException(
-        'Only administrators can delete contracts.',
-      );
+      throw new ForbiddenException('Only administrators can delete contracts.');
     }
 
     // First check if contract exists
@@ -692,14 +776,17 @@ export class ContractsService {
   }
 
   // Helper method to check contract permissions
-  private async checkContractPermission(contract: any, user: JwtPayload): Promise<void> {
+  private async checkContractPermission(
+    contract: any,
+    user: JwtPayload,
+  ): Promise<void> {
     const ownerProfile =
       user.role === UserRole.OWNER
         ? await this.prisma.owner.findUnique({ where: { userId: user.sub } })
         : null;
-    const employeeProfile =
+    const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.employee.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
         : null;
     const tenantProfile =
       user.role === UserRole.TENANT
@@ -709,7 +796,7 @@ export class ContractsService {
     const isOwnerOfContract =
       ownerProfile && contract.ownerId === ownerProfile.id;
     const isManagerOfProperty =
-      employeeProfile && contract.property.managerId === employeeProfile.id;
+      managerProfile && contract.property.managerId === managerProfile.id;
     const isTenantOfContract =
       tenantProfile && contract.tenantId === tenantProfile.id;
 
@@ -722,6 +809,8 @@ export class ContractsService {
       return; // Has permission
     }
 
-    throw new ForbiddenException('You do not have permission to access this contract.');
+    throw new ForbiddenException(
+      'You do not have permission to access this contract.',
+    );
   }
 }

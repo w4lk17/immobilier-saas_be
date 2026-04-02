@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsNumber, IsDateString, IsEnum, IsOptional, IsInt } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsInt,
+} from 'class-validator';
 import { ExpenseType, ExpenseStatus } from '@prisma/client';
 
 export class CreateExpenseDto {
@@ -10,7 +18,7 @@ export class CreateExpenseDto {
   @IsOptional()
   rentalId?: number;
 
-  // recordedById est généralement récupéré du JWT (user connecté), 
+  // recordedById est généralement récupéré du JWT (user connecté),
   // mais on peut le laisser ici pour les cas admin ou validation manuelle
   @IsInt()
   @IsNotEmpty()

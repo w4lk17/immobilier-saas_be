@@ -8,4 +8,3 @@ import { InvoicesController } from './invoices.controller';
   exports: [InvoicesService],
 })
 export class InvoicesModule {}
-
