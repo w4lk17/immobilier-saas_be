@@ -14,9 +14,9 @@ export class CreateTenantDto {
   email: string;
 
   @IsString()
-  @IsNotEmpty()
-  @MinLength(6)
-  password: string;
+  @IsOptional()
+  @MinLength(8)
+  password?: string;
 
   @IsString()
   @IsNotEmpty()

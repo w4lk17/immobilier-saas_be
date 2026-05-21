@@ -2,308 +2,181 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
-  InternalServerErrorException,
   ForbiddenException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { UpdateStatusDto } from '../common/dto/update-status.dto';
-import { Tenant, User, UserRole } from '@prisma/client';
+import { User, UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/types';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class TenantsService {
-  constructor(private prisma: PrismaService) {}
-
-  // Helper pour nettoyer la réponse
-  private formatTenantResponse(tenant: any) {
-    if (!tenant) return null;
-    if (tenant.user) {
-      const { password, refreshToken, ...secureUser } = tenant.user;
-      return { ...tenant, user: secureUser };
-    }
-    return tenant;
-  }
+  constructor(private prisma: PrismaService) { }
 
   // ==========================================
-  // CREATE (Admin seulement)
+  // CREATE
   // ==========================================
-  async create(dto: CreateTenantDto): Promise<any> {
-    // 1. Vérifier unicité email
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email },
+  async create(adminId: number, data: CreateTenantDto) {
+    // 1. Vérification Admin & Org
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      include: { organization: true },
     });
-    if (existingUser) {
-      throw new ConflictException('Un utilisateur avec cet email existe déjà.');
+    if (!admin || !admin.organization) {
+      throw new ForbiddenException('Aucune organisation trouvée pour cet administrateur.');
     }
 
-    // 2. Hasher le mot de passe
-    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    // 2. Unicité Email
+    const existing = await this.prisma.user.findUnique({ where: { email: data.email } });
+    if (existing) throw new ConflictException('Cet email est déjà utilisé.');
+
+    // 3. Mot de passe temporaire
+    const tempPassword = 'password123';// Math.random().toString(36).slice(-8);
+    const hash = await bcrypt.hash(tempPassword, 10);
 
     try {
-      // 3. Création Transactionnelle (User + Tenant)
       const newUser = await this.prisma.user.create({
         data: {
-          email: dto.email,
-          password: hashedPassword,
-          role: UserRole.TENANT, // Rôle forcé
+          email: data.email,
+          password: hash,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          phoneNumber: data.phoneNumber,
+          civility: data.civility,
+          dateOfBirth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+          address: data.address,
+          pictureUrl: data.pictureUrl,
+          workPlace: data.workPlace,
+          occupation: data.occupation,
+          identityDocumentNumber: data.identityDocumentNumber,
+          identityDocumentType: data.identityDocumentType,
+          identityDeliveryCity: data.identityDeliveryCity,
+          identityDeliveryDate: data.identityDeliveryDate ? new Date(data.identityDeliveryDate) : null,
+          identityExpiryDate: data.identityExpiryDate ? new Date(data.identityExpiryDate) : null,
+          pacLastName: data.pacLastName,
+          pacFirstName: data.pacFirstName,
+          pacPhoneNumber: data.pacPhoneNumber,
 
-          // Champs communs User
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          phoneNumber: dto.phoneNumber,
-          address: dto.address,
-          civility: dto.civility,
-          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
-          workPlace: dto.workPlace,
-          occupation: dto.occupation,
-          pictureUrl: dto.pictureUrl,
-          identityDocumentNumber: dto.identityDocumentNumber,
-          identityDocumentType: dto.identityDocumentType,
-          identityDeliveryCity: dto.identityDeliveryCity,
-          identityDeliveryDate: dto.identityDeliveryDate
-            ? new Date(dto.identityDeliveryDate)
-            : null,
-          identityExpiryDate: dto.identityExpiryDate
-            ? new Date(dto.identityExpiryDate)
-            : null,
-          pacLastName: dto.pacLastName,
-          pacFirstName: dto.pacFirstName,
-          pacPhoneNumber: dto.pacPhoneNumber,
+          role: UserRole.TENANT,
+          organizationId: admin.organizationId, // Même Org
+          isActive: true,
 
-          // Création profil Tenant imbriqué
+          // Création profil Tenant
           tenantProfile: {
             create: {
-              oldAddress: dto.oldAddress,
+              oldAddress: data.oldAddress,
             },
           },
         },
-        include: {
-          tenantProfile: true,
-        },
+        include: { tenantProfile: true },
       });
 
-      // Reformatage pour correspondre à l'attendu (Tenant avec user imbriqué)
-      const { tenantProfile, ...userData } = newUser;
-      return this.formatTenantResponse({
-        ...tenantProfile,
-        user: userData,
-      });
+      // TODO: Envoyer Email avec tempPassword
+      console.log(`Tenant created for ${data.email}. Temp pass: ${tempPassword}`);
+
+      const { password, ...result } = newUser;
+      return result;
+
     } catch (error) {
-      console.error('Error creating tenant:', error);
-      throw new InternalServerErrorException(
-        'Erreur lors de la création du locataire',
-      );
+      console.error(error);
+      throw new Error("Erreur lors de la création du locataire.");
     }
   }
 
   // ==========================================
-  // FIND ALL (Admin seulement)
+  // FIND ALL
   // ==========================================
-  async findAll(): Promise<any[]> {
-    const tenants = await this.prisma.tenant.findMany({
-      include: {
-        user: true,
+  async findAll(orgId: number) {
+    return this.prisma.user.findMany({
+      where: {
+        organizationId: orgId,
+        role: UserRole.TENANT
       },
-      orderBy: {
-        user: {
-          createdAt: 'desc',
-        },
-      },
+      include: { tenantProfile: true },
+      orderBy: { createdAt: 'desc' }
     });
-    return tenants.map(this.formatTenantResponse);
   }
 
   // ==========================================
-  // FIND ONE (Admin ou Self)
+  // FIND ONE
   // ==========================================
-  async findOne(id: number, currentUser: JwtPayload): Promise<any> {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id },
-      include: {
-        user: true,
-        contracts: {
-          include: { property: { select: { address: true } } },
-          orderBy: { startDate: 'desc' },
-        },
-        invoices: {
-          orderBy: { createdAt: 'desc' },
-          take: 5,
-        },
+  async findOne(id: number, orgId: number) {
+    const tenant = await this.prisma.user.findFirst({
+      where: {
+        id,
+        organizationId: orgId,
+        role: UserRole.TENANT
       },
+      include: { tenantProfile: true },
     });
 
-    if (!tenant) {
-      throw new NotFoundException(`Locataire avec l'ID "${id}" introuvable.`);
-    }
+    if (!tenant) throw new NotFoundException('Locataire introuvable dans votre organisation.');
 
-    // Droit d'accès : Admin OU c'est son propre profil
-    const isOwner = tenant.userId === currentUser.sub;
-    if (currentUser.role !== UserRole.ADMIN && !isOwner) {
-      throw new ForbiddenException("Vous n'avez pas accès à ce profil.");
-    }
-
-    return this.formatTenantResponse(tenant);
+    const { password, ...result } = tenant;
+    return result;
   }
 
   // ==========================================
-  // UPDATE (Admin ou Self)
+  // UPDATE
   // ==========================================
-  async update(
-    id: number,
-    dto: UpdateTenantDto,
-    currentUser: JwtPayload,
-  ): Promise<any> {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id },
-      include: { user: true },
-    });
+  async update(id: number, orgId: number, data: UpdateTenantDto) {
+    // Vérif existence
+    await this.findOne(id, orgId); // Lance 404 si pas trouvé ou pas dans l'org
 
-    if (!tenant) {
-      throw new NotFoundException(`Locataire avec l'ID "${id}" introuvable.`);
-    }
+    // Préparation données User
+    const userData: any = { ...data };
+    // Nettoyage des champs qui ne vont pas dans User
+    delete userData.oldAddress;
+    delete userData.organizationId; // Sécurité : ne pas changer l'org
+    delete userData.role; // Sécurité : ne pas changer le role ici
 
-    const isAdmin = currentUser.role === UserRole.ADMIN;
-    const isSelf = tenant.userId === currentUser.sub;
-
-    if (!isAdmin && !isSelf) {
-      throw new ForbiddenException('Action non autorisée.');
-    }
-
-    // Préparation des données
-    const userData: any = {};
+    // Préparation données Tenant
     const tenantData: any = {};
+    if (data.oldAddress !== undefined) tenantData.oldAddress = data.oldAddress;
 
-    // Mappage des champs User (communs)
-    if (dto.firstName) userData.firstName = dto.firstName;
-    if (dto.lastName) userData.lastName = dto.lastName;
-    if (dto.phoneNumber) userData.phoneNumber = dto.phoneNumber;
-    if (dto.address) userData.address = dto.address;
-    if (dto.civility) userData.civility = dto.civility;
-    if (dto.dateOfBirth) userData.dateOfBirth = new Date(dto.dateOfBirth);
-    if (dto.pictureUrl) userData.pictureUrl = dto.pictureUrl;
-    if (dto.workPlace) userData.workPlace = dto.workPlace;
-    if (dto.occupation) userData.occupation = dto.occupation;
-    if (dto.identityDocumentNumber)
-      userData.identityDocumentNumber = dto.identityDocumentNumber;
-    if (dto.identityDocumentType)
-      userData.identityDocumentType = dto.identityDocumentType;
-    if (dto.identityDeliveryCity)
-      userData.identityDeliveryCity = dto.identityDeliveryCity;
-    if (dto.identityDeliveryDate)
-      userData.identityDeliveryDate = new Date(dto.identityDeliveryDate);
-    if (dto.identityExpiryDate)
-      userData.identityExpiryDate = new Date(dto.identityExpiryDate);
-    if (dto.pacLastName) userData.pacLastName = dto.pacLastName;
-    if (dto.pacFirstName) userData.pacFirstName = dto.pacFirstName;
-    if (dto.pacPhoneNumber) userData.pacPhoneNumber = dto.pacPhoneNumber;
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: {
+        ...userData,
+        tenantProfile: Object.keys(tenantData).length > 0 ? { update: tenantData } : undefined
+      },
+      include: { tenantProfile: true }
+    });
 
-    // Mappage des champs Tenant (spécifiques)
-    if (dto.oldAddress !== undefined) tenantData.oldAddress = dto.oldAddress;
-
-    try {
-      const updated = await this.prisma.$transaction(async (tx) => {
-        // Update User si nécessaire
-        if (Object.keys(userData).length > 0) {
-          await tx.user.update({
-            where: { id: tenant.userId },
-            data: userData,
-          });
-        }
-        // Update Tenant si nécessaire
-        if (Object.keys(tenantData).length > 0) {
-          return await tx.tenant.update({
-            where: { id },
-            data: tenantData,
-            include: { user: true },
-          });
-        }
-        // Si seul l'user a changé
-        return await tx.tenant.findUnique({
-          where: { id },
-          include: { user: true },
-        });
-      });
-
-      return this.formatTenantResponse(updated);
-    } catch (error) {
-      console.error('Error updating tenant:', error);
-      throw new InternalServerErrorException('Erreur lors de la mise à jour.');
-    }
+    const { password, ...result } = updated;
+    return result;
   }
 
   // ==========================================
   // UPDATE STATUS (Admin seulement)
   // ==========================================
-  async updateStatus(id: number, dto: UpdateStatusDto): Promise<any> {
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id },
-    });
-
-    if (!tenant) {
+  async updateStatus(id: number, dto: UpdateStatusDto): Promise<User> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) {
       throw new NotFoundException(`Locataire avec l'ID "${id}" introuvable.`);
     }
 
-    try {
-      const updatedUser = await this.prisma.user.update({
-        where: { id: tenant.userId },
-        data: { isActive: dto.isActive },
-        include: { tenantProfile: true },
-      });
-
-      const { tenantProfile, ...userFields } = updatedUser;
-      return this.formatTenantResponse({
-        ...tenantProfile,
-        user: userFields,
-      });
-    } catch (error) {
-      console.error('Error updating status:', error);
-      throw new InternalServerErrorException(
-        'Erreur lors du changement de statut.',
-      );
-    }
-  }
-
-  // ==========================================
-  // REMOVE (Admin seulement)
-  // ==========================================
-  async remove(id: number): Promise<any> {
-    const tenant = await this.prisma.tenant.findUnique({
+    return this.prisma.user.update({
       where: { id },
-      include: { user: true },
+      data: { isActive: dto.isActive },
     });
-
-    if (!tenant) {
-      throw new NotFoundException(`Locataire avec l'ID "${id}" introuvable.`);
-    }
-
-    try {
-      // Stratégie : Supprimer le profil, rétrograder l'utilisateur
-      await this.prisma.$transaction(async (tx) => {
-        // 1. Supprimer le profil Tenant
-        await tx.tenant.delete({ where: { id } });
-
-        // 2. Mettre à jour le rôle de l'User
-        await tx.user.update({
-          where: { id: tenant.userId },
-          data: { role: UserRole.USER },
-        });
-      });
-
-      return {
-        message: `Profil locataire ${id} supprimé. L'utilisateur a été rétrogradé.`,
-      };
-    } catch (error) {
-      console.error('Error removing tenant:', error);
-      if (error.code === 'P2003') {
-        throw new BadRequestException(
-          'Impossible de supprimer ce locataire car il a des contrats ou factures liés.',
-        );
-      }
-      throw new InternalServerErrorException('Erreur lors de la suppression.');
-    }
   }
+
+  // ==========================================
+  // REMOVE (Soft Delete)
+  // ==========================================
+  async remove(id: number, orgId: number) {
+  await this.findOne(id, orgId); // Vérif
+
+  // On désactive le compte pour garder l'historique des contrats
+  return this.prisma.user.update({
+    where: { id },
+    data: { isActive: false }
+  });
+}
 }

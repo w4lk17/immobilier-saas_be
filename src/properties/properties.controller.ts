@@ -14,7 +14,7 @@ import { UpdatePropertyDto } from './dto/update-property.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
-import { JwtPayload } from '../auth/types';
+import { JwtPayload, RequestUser } from '../auth/types';
 
 @Controller('properties')
 export class PropertiesController {
@@ -24,9 +24,9 @@ export class PropertiesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER) // Seuls Admin et Manager peuvent créer
   create(
     @Body() createPropertyDto: CreatePropertyDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
-    return this.propertiesService.create(createPropertyDto, user);
+    return this.propertiesService.create(createPropertyDto, user.id);
   }
 
   @Get()

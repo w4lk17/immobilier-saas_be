@@ -31,8 +31,15 @@ export class OwnersService {
   // ==========================================
   // CREATE (Admin seulement)
   // ==========================================
-  async create(dto: CreateOwnerDto): Promise<any> {
-    // 1. Vérifier unicité email
+  async create(adminId: number, dto: CreateOwnerDto) {
+    // 1. Récupérer l'organisation de l'admin
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      include: { organization: true },
+    });
+    if (!admin?.organization) throw new ForbiddenException('Organisation introuvable');
+
+    // Vérifier unicité email
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -73,6 +80,7 @@ export class OwnersService {
           pacLastName: dto.pacLastName,
           pacFirstName: dto.pacFirstName,
           pacPhoneNumber: dto.pacPhoneNumber,
+          organizationId: admin.organizationId, // <--- CORRECTION ICI
 
           // Création profil Owner imbriqué (vide car pas de champs spécifiques dans le schéma actuel)
           ownerProfile: {

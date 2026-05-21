@@ -15,63 +15,25 @@ import { JwtPayload } from '../auth/types';
 export class PropertiesService {
   constructor(private prisma: PrismaService) {}
 
-  async create(
-    createPropertyDto: CreatePropertyDto,
-    user: JwtPayload,
-  ): Promise<Property> {
-    // 1. RBAC Check : Seul ADMIN et MANAGER (Manager) peuvent créer
-    if (user.role !== UserRole.ADMIN && user.role !== UserRole.MANAGER) {
-      throw new ForbiddenException(
-        'Seuls les administrateurs et gestionnaires peuvent créer des propriétés.',
-      );
-    }
-
-    // 2. Valider l'existence du Owner
-    const owner = await this.prisma.owner.findUnique({
-      where: { id: createPropertyDto.ownerId },
-      include: { user: true }, // Inclure user pour vérifier si le compte est actif
+  async create(adminId: number, createPropertyDto: CreatePropertyDto) {
+    // 1. Récupérer l'org
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      include: { organization: true, ownerProfile: true },
     });
-    if (!owner) {
-      throw new NotFoundException(
-        `Propriétaire avec l'ID "${createPropertyDto.ownerId}" introuvable.`,
-      );
-    }
+    if (!admin?.organization) throw new ForbiddenException('Organisation introuvable');
 
-    // 3. Valider le Manager (si fourni)
-    if (createPropertyDto.managerId) {
-      const manager = await this.prisma.manager.findUnique({
-        where: { id: createPropertyDto.managerId },
-      });
-      if (!manager) {
-        throw new NotFoundException(
-          `Gestionnaire avec l'ID "${createPropertyDto.managerId}" introuvable.`,
-        );
-      }
-    }
-    // Logique Optionnelle : Si un Employee crée un bien, s'assigne-t-il automatiquement ?
-    // Si managerId n'est pas fourni et que c'est un MANAGER qui crée :
-    else if (user.role === UserRole.MANAGER) {
-      const managerProfile = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
-      });
-      if (managerProfile) createPropertyDto.managerId = managerProfile.id;
-    }
+    // Si l'owner n'est pas passé dans le DTO, on suppose que c'est l'admin créateur
+    const ownerId = createPropertyDto.ownerId || admin.ownerProfile?.id;
+    if (!ownerId) throw new NotFoundException('Profil propriétaire introuvable');
 
-    try {
-      return await this.prisma.property.create({
-        data: createPropertyDto,
-        include: {
-          owner: { include: { user: true } },
-          manager: { include: { user: true } },
-          _count: { select: { rentals: true, expenses: true } },
-        },
-      });
-    } catch (error) {
-      console.error('Error creating property:', error);
-      throw new InternalServerErrorException(
-        'Impossible de créer la propriété.',
-      );
-    }
+    return this.prisma.property.create({
+      data: {
+        ...createPropertyDto,
+        organizationId: admin.organizationId, // <--- CORRECTION ICI
+        ownerId: ownerId,
+      },
+    });
   }
 
   async findAll(user: JwtPayload): Promise<Property[]> {

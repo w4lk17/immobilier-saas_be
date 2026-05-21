@@ -41,13 +41,20 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
         id: true,
         email: true,
         role: true,
-        isActive: true /* select needed fields */,
+        isActive: true,
+        organizationId: true,
+        firstName: true,
+        lastName: true
       },
     });
 
     if (!user) {
       // console.log(`JwtStrategy: User ${payload.sub} not found.`);
       throw new UnauthorizedException('User not found or invalid token');
+    }
+
+    if(!user.isActive){
+      throw new UnauthorizedException('Compte désactivé');
     }
 
     // On retourne un objet propre.
@@ -57,6 +64,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       email: user.email,
       role: user.role,
       isActive: user.isActive,
+      organizationId: user.organizationId,
+      firstName: user.firstName,
+      lastName: user.lastName
     };
   }
 }
