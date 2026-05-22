@@ -8,10 +8,14 @@ import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { SmsModule } from '../sms/sms.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
     UsersModule, // Make UsersService available for injection
+    SmsModule,
+    EmailModule,
     PassportModule,
     ConfigModule, // Ensure ConfigModule is imported (likely globally in AppModule)
     JwtModule.registerAsync({

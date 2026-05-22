@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PuppeteerEngine } from './engines/puppeteer.engine';
 import { LeasePdfPayload } from 'src/contracts/contracts.service';
+// import { ReactPdfEngine } from './engines/react-pdf.engine';
 
 @Injectable()
 export class PdfService {
@@ -14,8 +15,9 @@ export class PdfService {
       case 'puppeteer':
         const puppeteerEngine = new PuppeteerEngine();
         return puppeteerEngine.generate(data);
-
-      // On préparera le case 'react-pdf' plus tard
+      // case 'react-pdf': 
+      //   const reactPdfEngine = new ReactPdfEngine();
+      //   return reactPdfEngine.generate(data);
       default:
         throw new Error(`Moteur PDF "${engine}" non configuré.`);
     }

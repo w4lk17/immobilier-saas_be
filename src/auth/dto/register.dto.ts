@@ -5,6 +5,7 @@ import {
   MinLength,
   IsOptional,
   IsEnum,
+  Matches,
 } from 'class-validator';
 
 // Les slugs disponibles tels que définis dans ton seed
@@ -31,6 +32,13 @@ export class RegisterDto {
   @IsString()
   @IsNotEmpty()
   lastName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\+[1-9]\d{7,14}$/, {
+    message: 'phone must be a valid international phone number.',
+  })
+  phone: string;
 
   @IsString()
   @IsNotEmpty()

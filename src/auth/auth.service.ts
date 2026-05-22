@@ -4,26 +4,34 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { SubscriptionStatus, User, UserRole } from '@prisma/client';
-import { v4 as uuidv4 } from 'uuid';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { Tokens, JwtPayload } from './types';
 import { RegisterDto } from './dto/register.dto';
 import { Response } from 'express';
+import { SmsService } from '../sms/sms.service';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  private readonly otpTtlMs = 10 * 60 * 1000;
+
   constructor(
     private prisma: PrismaService,
-    private usersService: UsersService, // Use UsersService for user operations
+    private usersService: UsersService,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) { }
+    private smsService: SmsService,
+    private emailService: EmailService,
+  ) {}
 
   async validateUser(email: string, pass: string): Promise<User | null> {
     const user = await this.usersService.findByEmail(email);
@@ -34,55 +42,60 @@ export class AuthService {
     return null;
   }
 
-  async register(
-    dto: RegisterDto
-  ) {
+  async register(dto: RegisterDto) {
     const existingUser = await this.usersService.findByEmail(dto.email);
-    if (existingUser)
-      throw new ConflictException('un utilisateur avec cet email existe déjà.');
+    if (existingUser) {
+      throw new ConflictException('un utilisateur avec cet email existe deja.');
+    }
 
-    // 2. Récupérer le plan choisi
+    const existingOrganizationPhone = await this.prisma.organization.findUnique({
+      where: { phone: dto.phone },
+    });
+    if (existingOrganizationPhone) {
+      throw new ConflictException(
+        'un utilisateur avec ce telephone existe deja.',
+      );
+    }
+
     const plan = await this.prisma.plan.findUnique({
       where: { slug: dto.planSlug },
     });
     if (!plan) {
-      throw new NotFoundException('Plan non trouvé');
+      throw new NotFoundException('Plan non trouve');
     }
 
-    // Pour Premium, on ne permet pas l'auto-inscription (contact sales)
     if (plan.slug === 'premium') {
-      throw new BadRequestException('Pour le plan Premium, veuillez nous contacter.');
+      throw new BadRequestException(
+        'Pour le plan Premium, veuillez nous contacter.',
+      );
     }
 
-    // 3. Hasher le mot de passe
     const passwordHash = await bcrypt.hash(dto.password, 10);
-
-    // 4. Calculer la fin de l'essai (14 jours)
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + 14);
+    const phoneVerifyCode = this.generateOtp();
 
-    // 5. Transaction : Créer Organisation + Utilisateur
     const result = await this.prisma.$transaction(async (tx) => {
-      // A. Créer l'Organisation
       const organization = await tx.organization.create({
         data: {
           name: dto.companyName,
           email: dto.email,
+          phone: dto.phone,
           planId: plan.id,
           subscriptionStatus: SubscriptionStatus.TRIAL,
-          trialEndsAt: trialEndsAt,
-          emailVerifyToken: uuidv4(), // Token pour vérification email
+          trialEndsAt,
+          phoneVerifyCode,
         },
       });
 
-      // B. Créer l'Utilisateur Admin
       const user = await tx.user.create({
         data: {
           email: dto.email,
           password: passwordHash,
           firstName: dto.firstName,
           lastName: dto.lastName,
-          role: UserRole.ADMIN, // Le créateur est ADMIN de l'org
+          phoneNumber: dto.phone,
+          role: UserRole.ADMIN,
           organizationId: organization.id,
           isActive: true,
         },
@@ -90,17 +103,95 @@ export class AuthService {
 
       return { user, organization };
     });
-    // 6. Envoyer l'email de vérification (TODO: intégrer service mail)
-    // await this.mailService.sendVerificationEmail(result.organization.emailVerifyToken, result.user.email);
-    console.log(`EMAIL VERIFICATION TOKEN for ${result.user.email}: ${result.organization.emailVerifyToken}`);
 
-    // Ne pas renvoyer le mot de passe
+    try {
+      await this.sendOtpNotifications(
+        result.organization.phone!,
+        result.user.email,
+        phoneVerifyCode,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send registration OTP for organization ${result.organization.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new InternalServerErrorException(
+        "Inscription creee, mais l'envoi du code OTP a echoue. Veuillez demander un nouveau code.",
+      );
+    }
+
     const { password, ...userWithoutPassword } = result.user;
     return {
-      message: 'Inscription réussie. Veuillez vérifier votre email.',
+      message:
+        'Inscription réussie. Veuillez vérifier votre compte avec le code OTP envoyé.',
+   
       user: userWithoutPassword,
       organization: result.organization,
     };
+  }
+
+  async verifyPhone(phone: string, code: string) {
+    const organization = await this.prisma.organization.findUnique({
+      where: { phone },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Numero de telephone introuvable.');
+    }
+
+    if (organization.isPhoneVerified) {
+      return { message: 'Numero de telephone deja verifie.' };
+    }
+
+    if (!organization.phoneVerifyCode || organization.phoneVerifyCode !== code) {
+      throw new BadRequestException('Code OTP invalide.');
+    }
+
+    if (this.isOtpExpired(organization.updatedAt)) {
+      throw new BadRequestException(
+        'Code OTP expire. Veuillez demander un nouveau code.',
+      );
+    }
+
+    await this.prisma.organization.update({
+      where: { id: organization.id },
+      data: {
+        isPhoneVerified: true,
+        phoneVerifyCode: null,
+      },
+    });
+
+    return { message: 'Numero de telephone verifie avec succes.' };
+  }
+
+  async resendOtp(phone: string) {
+    const organization = await this.prisma.organization.findUnique({
+      where: { phone },
+      include: { users: { where: { role: UserRole.ADMIN }, take: 1 } },
+    });
+
+    if (!organization) {
+      throw new NotFoundException('Numero de telephone introuvable.');
+    }
+
+    if (organization.isPhoneVerified) {
+      return { message: 'Numero de telephone deja verifie.' };
+    }
+
+    const adminUser = organization.users[0];
+    if (!adminUser) {
+      throw new NotFoundException('Utilisateur administrateur introuvable.');
+    }
+
+    const phoneVerifyCode = this.generateOtp();
+    await this.prisma.organization.update({
+      where: { id: organization.id },
+      data: { phoneVerifyCode },
+    });
+
+    await this.sendOtpNotifications(phone, adminUser.email, phoneVerifyCode);
+
+    return { message: 'Un nouveau code OTP a ete envoye.' };
   }
 
   async verifyEmail(token: string) {
@@ -112,35 +203,29 @@ export class AuthService {
       where: { emailVerifyToken: token },
     });
 
-    // Token introuvable: soit invalide, soit déjà consommé
     if (!org) {
-      // Option 1 (idempotent "tolérant"): renvoyer succès générique
-      return { message: 'Email déjà vérifié ou token invalide.' };
-
-      // Option 2 (strict): garder BadRequestException
-      // throw new BadRequestException('Token invalide ou expiré');
+      return { message: 'Email deja verifie ou token invalide.' };
     }
 
-    // Si déjà vérifié, succès idempotent
     if (org.isEmailVerified) {
-      return { message: 'Email déjà vérifié. Vous pouvez vous connecter.' };
+      return { message: 'Email deja verifie. Vous pouvez vous connecter.' };
     }
 
     await this.prisma.organization.update({
       where: { id: org.id },
       data: {
         isEmailVerified: true,
-        emailVerifyToken: null, // invalide le token
+        emailVerifyToken: null,
       },
     });
 
-    return { message: 'Email vérifié avec succès. Vous pouvez vous connecter.' };
+    return { message: 'Email verifie avec succes. Vous pouvez vous connecter.' };
   }
+
   async login(
     user: Omit<User, 'password' | 'refreshToken'>,
     response: any,
   ): Promise<void> {
-    // response is Express Response
     const tokens = await this._generateTokens({
       sub: user.id,
       email: user.email,
@@ -156,7 +241,6 @@ export class AuthService {
     rt: string,
     response: any,
   ): Promise<void> {
-    // response is Express Response
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
@@ -172,7 +256,6 @@ export class AuthService {
       throw new ForbiddenException('Access Denied: Invalid refresh token');
     }
 
-    // Tokens are valid, generate new ones
     const tokens = await this._generateTokens({
       sub: user.id,
       email: user.email,
@@ -185,9 +268,6 @@ export class AuthService {
   }
 
   async logout(userId: number | null, response: Response) {
-    // response is Express Response
-    // Set refresh token hash to null in database
-
     if (userId) {
       await this.usersService.updateRefreshTokenHash(userId, null);
     }
@@ -274,23 +354,38 @@ export class AuthService {
     return { message: 'Mot de passe reinitialise avec succes.' };
   }
 
-  // --- Helper Methods ---
-
   private async _generateTokens(payload: JwtPayload): Promise<Tokens> {
     const [at, rt] = await Promise.all([
-      // Access Token
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRATION'), // e.g., '15m'
+        expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRATION'),
       }),
-      // Refresh Token
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRATION'), // e.g., '7d'
+        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRATION'),
       }),
     ]);
 
     return { accessToken: at, refreshToken: rt };
+  }
+
+  private generateOtp(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private isOtpExpired(updatedAt: Date): boolean {
+    return Date.now() - updatedAt.getTime() > this.otpTtlMs;
+  }
+
+  private async sendOtpNotifications(
+    phone: string,
+    email: string,
+    otp: string,
+  ): Promise<void> {
+    await Promise.all([
+      this.smsService.sendOtp(phone, otp),
+      this.emailService.sendOtpEmail(email, otp),
+    ]);
   }
 
   private async _updateRefreshTokenHash(
@@ -311,24 +406,20 @@ export class AuthService {
 
     const cookieOptions = {
       httpOnly: true,
-      // On Vercel (HTTPS), we use true. On local PC (HTTP), we use false.
       secure: isProduction,
-      // On Vercel (Cross-site), we use 'none'. On local PC, 'lax' is fine.
       sameSite: isProduction ? ('none' as const) : ('lax' as const),
       path: '/',
     };
 
-    // Set Access Token Cookie
     response.cookie('accessToken', tokens.accessToken, {
       ...cookieOptions,
-      maxAge: 15 * 60 * 1000, //this.configService.get<number>('JWT_ACCESS_EXPIRATION'), // 15 minutes
+      maxAge: 15 * 60 * 1000,
     });
 
-    // Set Refresh Token Cookie
     response.cookie('refreshToken', tokens.refreshToken, {
       ...cookieOptions,
-      path: '/api/auth', // Only send RT cookie to auth endpoints
-      maxAge: 7 * 24 * 60 * 60 * 1000, //this.configService.get<number>('JWT_REFRESH_EXPIRATION'), // 7 days
+      path: '/api/auth',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
   }
 

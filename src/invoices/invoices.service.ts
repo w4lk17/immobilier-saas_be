@@ -141,7 +141,7 @@ export class InvoicesService {
         : null;
 
     const isOwnerOfProperty =
-      ownerProfile && invoice.contract.property.ownerId === ownerProfile.id;
+      ownerProfile && invoice.contract.property?.ownerId === ownerProfile.id;
     const isTenantOfInvoice =
       tenantProfile && invoice.tenantId === tenantProfile.id;
     const isManagerOfContract =

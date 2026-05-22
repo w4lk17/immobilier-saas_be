@@ -21,6 +21,8 @@ import { JwtPayloadWithRt } from './types';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyPhoneDto } from './dto/verify-phone.dto';
+import { ResendOtpDto } from './dto/resend-otp.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -37,6 +39,20 @@ export class AuthController {
   @Get('verify-email')
   async verifyEmail(@Query('token') token: string) {
     return this.authService.verifyEmail(token);
+  }
+
+  @Public()
+  @Post('verify-phone')
+  @HttpCode(HttpStatus.OK)
+  async verifyPhone(@Body() dto: VerifyPhoneDto) {
+    return this.authService.verifyPhone(dto.phone, dto.code);
+  }
+
+  @Public()
+  @Post('resend-otp')
+  @HttpCode(HttpStatus.OK)
+  async resendOtp(@Body() dto: ResendOtpDto) {
+    return this.authService.resendOtp(dto.phone);
   }
 
   @Public()
