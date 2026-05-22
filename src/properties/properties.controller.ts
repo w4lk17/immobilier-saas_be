@@ -14,7 +14,7 @@ import { UpdatePropertyDto } from './dto/update-property.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
-import { JwtPayload, RequestUser } from '../auth/types';
+import { RequestUser } from '../auth/types';
 
 @Controller('properties')
 export class PropertiesController {
@@ -26,12 +26,12 @@ export class PropertiesController {
     @Body() createPropertyDto: CreatePropertyDto,
     @GetCurrentUser() user: RequestUser,
   ) {
-    return this.propertiesService.create(createPropertyDto, user.id);
+    return this.propertiesService.create(user.id, createPropertyDto);
   }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OWNER)
-  findAll(@GetCurrentUser() user: JwtPayload) {
+  findAll(@GetCurrentUser() user: RequestUser) {
     // On passe l'utilisateur au service pour qu'il filtre (Admin voit tout, Owner voit ses biens, etc.)
     return this.propertiesService.findAll(user);
   }
@@ -40,7 +40,7 @@ export class PropertiesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OWNER) // Admin, Manager et Owner peuvent voir le détail
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.propertiesService.findOne(id, user);
   }
@@ -50,7 +50,7 @@ export class PropertiesController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updatePropertyDto: UpdatePropertyDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.propertiesService.update(id, updatePropertyDto, user);
   }
@@ -59,7 +59,7 @@ export class PropertiesController {
   @Roles(UserRole.ADMIN) // SEUL ADMIN peut supprimer (le manager ne peut pas)
   remove(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.propertiesService.remove(id, user);
   }

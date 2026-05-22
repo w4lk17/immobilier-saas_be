@@ -11,7 +11,7 @@ import { CreateManagerDto } from './dto/create-manager.dto';
 import { UpdateManagerDto } from './dto/update-manager.dto';
 import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { UserRole } from '@prisma/client';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -27,7 +27,15 @@ export class ManagersService {
     return manager;
   }
 
-  async create(dto: CreateManagerDto): Promise<any> {
+  async create(adminId: number, dto: CreateManagerDto): Promise<any> {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      include: { organization: true },
+    });
+    if (!admin?.organization) {
+      throw new ForbiddenException('Organisation introuvable');
+    }
+
     const existingUser = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -63,6 +71,7 @@ export class ManagersService {
           pacLastName: dto.pacLastName,
           pacFirstName: dto.pacFirstName,
           pacPhoneNumber: dto.pacPhoneNumber,
+          organization: { connect: { id: admin.organizationId } },
           managerProfile: {
             create: {
               position: dto.position,
@@ -92,8 +101,9 @@ export class ManagersService {
     }
   }
 
-  async findAll(): Promise<any[]> {
+  async findAll(user: RequestUser): Promise<any[]> {
     const managers = await this.prisma.manager.findMany({
+      where: { user: { organizationId: user.organizationId } },
       include: {
         user: true,
       },
@@ -106,7 +116,7 @@ export class ManagersService {
     return managers.map(this.formatManagerResponse);
   }
 
-  async findOne(id: number, currentUser: JwtPayload): Promise<any> {
+  async findOne(id: number, currentUser: RequestUser): Promise<any> {
     const manager = await this.prisma.manager.findUnique({
       where: { id },
       include: {
@@ -116,11 +126,11 @@ export class ManagersService {
       },
     });
 
-    if (!manager) {
+    if (!manager || manager.user.organizationId !== currentUser.organizationId) {
       throw new NotFoundException(`Manager avec l'ID "${id}" introuvable.`);
     }
 
-    const isOwner = manager.userId === currentUser.sub;
+    const isOwner = manager.userId === currentUser.id;
     if (currentUser.role !== UserRole.ADMIN && !isOwner) {
       throw new ForbiddenException("Vous n'avez pas acces a ce profil.");
     }
@@ -131,19 +141,19 @@ export class ManagersService {
   async update(
     id: number,
     dto: UpdateManagerDto,
-    currentUser: JwtPayload,
+    currentUser: RequestUser,
   ): Promise<any> {
     const manager = await this.prisma.manager.findUnique({
       where: { id },
       include: { user: true },
     });
 
-    if (!manager) {
+    if (!manager || manager.user.organizationId !== currentUser.organizationId) {
       throw new NotFoundException(`Manager avec l'ID "${id}" introuvable.`);
     }
 
     const isAdmin = currentUser.role === UserRole.ADMIN;
-    const isSelf = manager.userId === currentUser.sub;
+    const isSelf = manager.userId === currentUser.id;
 
     if (!isAdmin && !isSelf) {
       throw new ForbiddenException('Action non autorisee.');
@@ -201,12 +211,17 @@ export class ManagersService {
     }
   }
 
-  async updateStatus(id: number, dto: UpdateStatusDto): Promise<any> {
+  async updateStatus(
+    id: number,
+    dto: UpdateStatusDto,
+    currentUser: RequestUser,
+  ): Promise<any> {
     const manager = await this.prisma.manager.findUnique({
       where: { id },
+      include: { user: true },
     });
 
-    if (!manager) {
+    if (!manager || manager.user.organizationId !== currentUser.organizationId) {
       throw new NotFoundException(`Manager avec l'ID "${id}" introuvable.`);
     }
 
@@ -230,13 +245,13 @@ export class ManagersService {
     }
   }
 
-  async remove(id: number): Promise<any> {
+  async remove(id: number, currentUser: RequestUser): Promise<any> {
     const manager = await this.prisma.manager.findUnique({
       where: { id },
       include: { user: true },
     });
 
-    if (!manager) {
+    if (!manager || manager.user.organizationId !== currentUser.organizationId) {
       throw new NotFoundException(`Manager avec l'ID "${id}" introuvable.`);
     }
 

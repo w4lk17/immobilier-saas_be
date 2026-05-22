@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { Expense, UserRole } from '@prisma/client';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 
 @Injectable()
 export class ExpensesService {
@@ -17,7 +17,7 @@ export class ExpensesService {
 
   async create(
     createExpenseDto: CreateExpenseDto,
-    user: JwtPayload,
+    user: RequestUser,
   ): Promise<Expense> {
     // 1. RBAC Check : Seuls ADMIN et MANAGER peuvent créer
     if (user.role !== UserRole.ADMIN && user.role !== UserRole.MANAGER) {
@@ -57,7 +57,8 @@ export class ExpensesService {
       return await this.prisma.expense.create({
         data: {
           ...createExpenseDto,
-          recordedById: user.sub, // L'utilisateur connecté enregistre la dépense
+          recordedById: user.id, // L'utilisateur connecté enregistre la dépense
+          organizationId: user.organizationId,
         },
         include: this.expenseIncludeRelations(),
       });
@@ -67,19 +68,19 @@ export class ExpensesService {
     }
   }
 
-  async findAll(user: JwtPayload): Promise<Expense[]> {
-    const whereClause: any = {};
+  async findAll(user: RequestUser): Promise<Expense[]> {
+    const whereClause: any = { organizationId: user.organizationId };
 
     // Filtrage par rôle
     if (user.role === UserRole.OWNER) {
       const ownerProfile = await this.prisma.owner.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (!ownerProfile) return [];
       whereClause.property = { ownerId: ownerProfile.id };
     } else if (user.role === UserRole.MANAGER) {
       const managerProfile = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (!managerProfile) return [];
       whereClause.property = { managerId: managerProfile.id };
@@ -93,14 +94,18 @@ export class ExpensesService {
     });
   }
 
-  async findOne(id: number, user: JwtPayload): Promise<Expense> {
+  async findOne(id: number, user: RequestUser): Promise<Expense> {
     const expense = await this.prisma.expense.findUnique({
       where: { id },
       include: this.expenseIncludeRelations(),
     });
 
-    if (!expense) {
+    if (!expense || expense.organizationId !== user.organizationId) {
       throw new NotFoundException(`Dépense avec l'ID "${id}" introuvable.`);
+    }
+
+    if (expense.propertyId === null) {
+      throw new BadRequestException("Cette dépense n'est liée à aucune propriété.");
     }
 
     // Vérifier les droits de lecture (Admin, Manager assigné, ou Propriétaire du bien)
@@ -112,14 +117,18 @@ export class ExpensesService {
   async update(
     id: number,
     updateExpenseDto: UpdateExpenseDto,
-    user: JwtPayload,
+    user: RequestUser,
   ): Promise<Expense> {
     // 1. Vérifier existence et droits d'écriture
     const existingExpense = await this.prisma.expense.findUnique({
       where: { id },
     });
-    if (!existingExpense) {
+    if (!existingExpense || existingExpense.organizationId !== user.organizationId) {
       throw new NotFoundException(`Dépense avec l'ID "${id}" introuvable.`);
+    }
+
+    if (existingExpense.propertyId === null) {
+      throw new BadRequestException("Cette dépense n'est liée à aucune propriété.");
     }
 
     // Droits d'écriture = Admin ou Manager assigné
@@ -163,12 +172,16 @@ export class ExpensesService {
     }
   }
 
-  async remove(id: number, user: JwtPayload): Promise<Expense> {
+  async remove(id: number, user: RequestUser): Promise<Expense> {
     const expense = await this.prisma.expense.findUnique({
       where: { id },
     });
-    if (!expense) {
+    if (!expense || expense.organizationId !== user.organizationId) {
       throw new NotFoundException(`Dépense avec l'ID "${id}" introuvable.`);
+    }
+
+    if (expense.propertyId === null) {
+      throw new BadRequestException("Cette dépense n'est liée à aucune propriété.");
     }
 
     // Seuls Admin et Employee peuvent supprimer (requireManagement = true)
@@ -190,13 +203,13 @@ export class ExpensesService {
 
   async findAllByProperty(
     propertyId: number,
-    user: JwtPayload,
+    user: RequestUser,
   ): Promise<Expense[]> {
     // Vérifie les droits de lecture sur la propriété
     await this.checkPropertyPermission(propertyId, user, false);
 
     return this.prisma.expense.findMany({
-      where: { propertyId },
+      where: { propertyId, organizationId: user.organizationId },
       include: this.expenseIncludeRelations(),
       orderBy: { date: 'desc' },
     });
@@ -204,14 +217,14 @@ export class ExpensesService {
 
   async findAllByRental(
     rentalId: number,
-    user: JwtPayload,
+    user: RequestUser,
   ): Promise<Expense[]> {
     const rental = await this.prisma.rental.findUnique({
       where: { id: rentalId },
       include: { property: true }, // Inclure property pour vérifier les droits
     });
 
-    if (!rental) {
+    if (!rental || rental.property.organizationId !== user.organizationId) {
       throw new NotFoundException(
         `Unité locative avec l'ID "${rentalId}" introuvable.`,
       );
@@ -221,7 +234,7 @@ export class ExpensesService {
     await this.checkPropertyPermission(rental.propertyId, user, false);
 
     return this.prisma.expense.findMany({
-      where: { rentalId },
+      where: { rentalId, organizationId: user.organizationId },
       include: this.expenseIncludeRelations(),
       orderBy: { date: 'desc' },
     });
@@ -282,14 +295,14 @@ export class ExpensesService {
    */
   private async checkPropertyPermission(
     propertyId: number,
-    user: JwtPayload,
+    user: RequestUser,
     requireManagement: boolean,
   ): Promise<{ property: any }> {
     const property = await this.prisma.property.findUnique({
       where: { id: propertyId },
     });
 
-    if (!property) {
+    if (!property || property.organizationId !== user.organizationId) {
       throw new NotFoundException(
         `Propriété avec l'ID "${propertyId}" introuvable.`,
       );
@@ -303,7 +316,7 @@ export class ExpensesService {
     if (requireManagement) {
       if (user.role === UserRole.MANAGER) {
         const managerProfile = await this.prisma.manager.findUnique({
-          where: { userId: user.sub },
+          where: { userId: user.id },
         });
         if (managerProfile && property.managerId === managerProfile.id) {
           return { property };
@@ -319,14 +332,14 @@ export class ExpensesService {
     if (!requireManagement) {
       if (user.role === UserRole.MANAGER) {
         const managerProfile = await this.prisma.manager.findUnique({
-          where: { userId: user.sub },
+          where: { userId: user.id },
         });
         if (managerProfile && property.managerId === managerProfile.id) {
           return { property };
         }
       } else if (user.role === UserRole.OWNER) {
         const ownerProfile = await this.prisma.owner.findUnique({
-          where: { userId: user.sub },
+          where: { userId: user.id },
         });
         if (ownerProfile && property.ownerId === ownerProfile.id) {
           return { property };

@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { Invoice, UserRole } from '@prisma/client';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 
 function makeInvoiceNumber(prefix = 'INV'): string {
   const ymd = new Date().toISOString().slice(0, 10).replaceAll('-', '');
@@ -23,59 +23,63 @@ function makeInvoiceNumber(prefix = 'INV'): string {
 export class InvoicesService {
   constructor(private prisma: PrismaService) {}
 
-  // async create(
-  //   createInvoiceDto: CreateInvoiceDto,
-  //   user: JwtPayload,
-  // ): Promise<Invoice> {
-  //   // 1. Validate Contract existence
-  //   const contract = await this.prisma.contract.findUnique({
-  //     where: { id: createInvoiceDto.contractId },
-  //     include: { manager: true },
-  //   });
-  //   if (!contract) {
-  //     throw new NotFoundException(
-  //       `Contract with ID ${createInvoiceDto.contractId} not found.`,
-  //     );
-  //   }
+  async create(
+    createInvoiceDto: CreateInvoiceDto,
+    user: RequestUser,
+  ): Promise<Invoice> {
+    // 1. Validate Contract existence
+    const contract = await this.prisma.contract.findFirst({
+      where: {
+        id: createInvoiceDto.contractId,
+        organizationId: user.organizationId,
+      },
+      include: { manager: true },
+    });
+    if (!contract) {
+      throw new NotFoundException(
+        `Contract with ID ${createInvoiceDto.contractId} not found.`,
+      );
+    }
 
-  //   // Ensure tenant ID matches the contract's tenant ID
-  //   if (contract.tenantId !== createInvoiceDto.tenantId) {
-  //     throw new ConflictException(
-  //       `Tenant ID ${createInvoiceDto.tenantId} does not match the tenant on contract ID ${createInvoiceDto.contractId}.`,
-  //     );
-  //   }
+    // Ensure tenant ID matches the contract's tenant ID
+    if (contract.tenantId !== createInvoiceDto.tenantId) {
+      throw new ConflictException(
+        `Tenant ID ${createInvoiceDto.tenantId} does not match the tenant on contract ID ${createInvoiceDto.contractId}.`,
+      );
+    }
 
-  //   // 2. Authorization (Admin or Manager of the contract)
-  //   const managerProfile =
-  //     user.role === UserRole.MANAGER
-  //       ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
-  //       : null;
-  //   const isManagerOfContract =
-  //     managerProfile && contract.managerId === managerProfile.id;
+    // 2. Authorization (Admin or Manager of the contract)
+    const managerProfile =
+      user.role === UserRole.MANAGER
+        ? await this.prisma.manager.findUnique({ where: { userId: user.id } })
+        : null;
+    const isManagerOfContract =
+      managerProfile && contract.managerId === managerProfile.id;
 
-  //   if (user.role !== UserRole.ADMIN && !isManagerOfContract) {
-  //     throw new ForbiddenException(
-  //       'Only Admins or the Manager of the associated contract can create invoices.',
-  //     );
-  //   }
+    if (user.role !== UserRole.ADMIN && !isManagerOfContract) {
+      throw new ForbiddenException(
+        'Only Admins or the Manager of the associated contract can create invoices.',
+      );
+    }
 
-  //   const invoiceNumber = createInvoiceDto.invoiceNumber || makeInvoiceNumber();
+    const invoiceNumber = createInvoiceDto.invoiceNumber || makeInvoiceNumber();
 
-  //   try {
-  //     return await this.prisma.invoice.create({
-  //       data: {
-  //         ...createInvoiceDto,
-  //         invoiceNumber,
-  //       },
-  //       include: { contract: true, tenant: { include: { user: true } } },
-  //     });
-  //   } catch (error) {
-  //     console.error('Error creating invoice:', error);
-  //     throw new InternalServerErrorException('Could not create invoice.');
-  //   }
-  // }
+    try {
+      return await this.prisma.invoice.create({
+        data: {
+          ...createInvoiceDto,
+          invoiceNumber,
+          organizationId: user.organizationId,
+        },
+        include: { contract: true, tenant: { include: { user: true } } },
+      });
+    } catch (error) {
+      console.error('Error creating invoice:', error);
+      throw new InternalServerErrorException('Could not create invoice.');
+    }
+  }
 
-  async findAll(user: JwtPayload): Promise<Invoice[]> {
+  async findAll(user: RequestUser): Promise<Invoice[]> {
     const queryArgs: any = {
       include: {
         contract: { include: { property: true } },
@@ -83,34 +87,39 @@ export class InvoicesService {
         transactions: true,
       },
       orderBy: { dueDate: 'desc' },
+      where: { organizationId: user.organizationId },
     };
 
     if (user.role === UserRole.TENANT) {
       const tenantProfile = await this.prisma.tenant.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (!tenantProfile) return [];
-      queryArgs.where = { tenantId: tenantProfile.id };
+      queryArgs.where = { ...queryArgs.where, tenantId: tenantProfile.id };
     } else if (user.role === UserRole.OWNER) {
       const ownerProfile = await this.prisma.owner.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (!ownerProfile) return [];
       queryArgs.where = {
+        ...queryArgs.where,
         contract: { property: { ownerId: ownerProfile.id } },
       };
     } else if (user.role === UserRole.MANAGER) {
       const managerProfile = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (!managerProfile) return [];
-      queryArgs.where = { contract: { managerId: managerProfile.id } };
+      queryArgs.where = {
+        ...queryArgs.where,
+        contract: { managerId: managerProfile.id },
+      };
     }
 
     return this.prisma.invoice.findMany(queryArgs);
   }
 
-  async findOne(id: number, user: JwtPayload): Promise<Invoice> {
+  async findOne(id: number, user: RequestUser): Promise<Invoice> {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
@@ -122,22 +131,22 @@ export class InvoicesService {
       },
     });
 
-    if (!invoice) {
+    if (!invoice || invoice.organizationId !== user.organizationId) {
       throw new NotFoundException(`Invoice with ID "${id}" not found`);
     }
 
     // Authorization
     const ownerProfile =
       user.role === UserRole.OWNER
-        ? await this.prisma.owner.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.owner.findUnique({ where: { userId: user.id } })
         : null;
     const tenantProfile =
       user.role === UserRole.TENANT
-        ? await this.prisma.tenant.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.tenant.findUnique({ where: { userId: user.id } })
         : null;
     const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.id } })
         : null;
 
     const isOwnerOfProperty =
@@ -164,20 +173,20 @@ export class InvoicesService {
   async update(
     id: number,
     updateInvoiceDto: UpdateInvoiceDto,
-    user: JwtPayload,
+    user: RequestUser,
   ): Promise<Invoice> {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: { contract: true, tenant: true },
     });
-    if (!invoice) {
+    if (!invoice || invoice.organizationId !== user.organizationId) {
       throw new NotFoundException(`Invoice with ID "${id}" not found.`);
     }
 
     // Authorization (Admin or Manager of the contract)
     const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.id } })
         : null;
     const isManagerOfContract =
       managerProfile && invoice.contract.managerId === managerProfile.id;
@@ -207,19 +216,19 @@ export class InvoicesService {
     }
   }
 
-  async remove(id: number, user: JwtPayload): Promise<Invoice> {
+  async remove(id: number, user: RequestUser): Promise<Invoice> {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: { contract: true, transactions: true },
     });
-    if (!invoice) {
+    if (!invoice || invoice.organizationId !== user.organizationId) {
       throw new NotFoundException(`Invoice with ID "${id}" not found.`);
     }
 
     // Authorization (Admin or Manager of the contract)
     const managerProfile =
       user.role === UserRole.MANAGER
-        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
+        ? await this.prisma.manager.findUnique({ where: { userId: user.id } })
         : null;
     const isManagerOfContract =
       managerProfile && invoice.contract.managerId === managerProfile.id;

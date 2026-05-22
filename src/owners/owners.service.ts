@@ -11,7 +11,7 @@ import { CreateOwnerDto } from './dto/create-owner.dto';
 import { UpdateOwnerDto } from './dto/update-owner.dto';
 import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { UserRole } from '@prisma/client';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -109,8 +109,9 @@ export class OwnersService {
   // ==========================================
   // FIND ALL (Admin seulement)
   // ==========================================
-  async findAll(): Promise<any[]> {
+  async findAll(user: RequestUser): Promise<any[]> {
     const owners = await this.prisma.owner.findMany({
+      where: { user: { organizationId: user.organizationId } },
       include: {
         user: true,
         // Optionnel: compter les propriétés
@@ -128,7 +129,7 @@ export class OwnersService {
   // ==========================================
   // FIND ONE (Admin ou Self)
   // ==========================================
-  async findOne(id: number, currentUser: JwtPayload): Promise<any> {
+  async findOne(id: number, currentUser: RequestUser): Promise<any> {
     const owner = await this.prisma.owner.findUnique({
       where: { id },
       include: {
@@ -137,14 +138,14 @@ export class OwnersService {
       },
     });
 
-    if (!owner) {
+    if (!owner || owner.user.organizationId !== currentUser.organizationId) {
       throw new NotFoundException(
         `Propriétaire avec l'ID "${id}" introuvable.`,
       );
     }
 
     // Droit d'accès : Admin OU c'est son propre profil
-    const isOwner = owner.userId === currentUser.sub;
+    const isOwner = owner.userId === currentUser.id;
     if (currentUser.role !== UserRole.ADMIN && !isOwner) {
       throw new ForbiddenException("Vous n'avez pas accès à ce profil.");
     }
@@ -158,21 +159,21 @@ export class OwnersService {
   async update(
     id: number,
     dto: UpdateOwnerDto,
-    currentUser: JwtPayload,
+    currentUser: RequestUser,
   ): Promise<any> {
     const owner = await this.prisma.owner.findUnique({
       where: { id },
       include: { user: true },
     });
 
-    if (!owner) {
+    if (!owner || owner.user.organizationId !== currentUser.organizationId) {
       throw new NotFoundException(
         `Propriétaire avec l'ID "${id}" introuvable.`,
       );
     }
 
     const isAdmin = currentUser.role === UserRole.ADMIN;
-    const isSelf = owner.userId === currentUser.sub;
+    const isSelf = owner.userId === currentUser.id;
 
     if (!isAdmin && !isSelf) {
       throw new ForbiddenException('Action non autorisée.');
@@ -233,12 +234,17 @@ export class OwnersService {
   // ==========================================
   // UPDATE STATUS (Admin seulement)
   // ==========================================
-  async updateStatus(id: number, dto: UpdateStatusDto): Promise<any> {
+  async updateStatus(
+    id: number,
+    dto: UpdateStatusDto,
+    currentUser: RequestUser,
+  ): Promise<any> {
     const owner = await this.prisma.owner.findUnique({
       where: { id },
+      include: { user: true },
     });
 
-    if (!owner) {
+    if (!owner || owner.user.organizationId !== currentUser.organizationId) {
       throw new NotFoundException(
         `Propriétaire avec l'ID "${id}" introuvable.`,
       );
@@ -267,7 +273,7 @@ export class OwnersService {
   // ==========================================
   // REMOVE (Admin seulement)
   // ==========================================
-  async remove(id: number): Promise<any> {
+  async remove(id: number, currentUser: RequestUser): Promise<any> {
     const owner = await this.prisma.owner.findUnique({
       where: { id },
       include: {
@@ -276,7 +282,7 @@ export class OwnersService {
       },
     });
 
-    if (!owner) {
+    if (!owner || owner.user.organizationId !== currentUser.organizationId) {
       throw new NotFoundException(
         `Propriétaire avec l'ID "${id}" introuvable.`,
       );

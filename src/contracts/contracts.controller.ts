@@ -32,7 +32,7 @@ export class ContractsController {
   @Get()
   @Roles(UserRole.ADMIN, UserRole.TENANT)
   findAll(@GetCurrentUser() user: RequestUser) {
-    return this.contractsService.findAll(user.organizationId);
+    return this.contractsService.findAll(user);
   }
 
   @Get(':id')
@@ -41,7 +41,7 @@ export class ContractsController {
     @Param('id', ParseIntPipe) id: number,
     @GetCurrentUser() user: RequestUser,
   ) {
-    return this.contractsService.findOne(id, user.organizationId);
+    return this.contractsService.findOne(id, user);
   }
 
   @Patch(':id')

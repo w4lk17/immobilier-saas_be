@@ -19,7 +19,7 @@ enum UserRole {
   TENANT
   MANAGER
   ADMIN      // Admin d'une Organisation (Client)
-  SUPER_ADMIN // Toi, l'admin de la plateforme Hofeti
+  SUPER_ADMIN // admin de la plateforme Hofeti
 }
 
 enum SubscriptionStatus {

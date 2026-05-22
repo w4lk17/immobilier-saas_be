@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { ContractStatus, Property, UserRole } from '@prisma/client';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 
 @Injectable()
 export class PropertiesService {
@@ -27,6 +27,14 @@ export class PropertiesService {
     const ownerId = createPropertyDto.ownerId || admin.ownerProfile?.id;
     if (!ownerId) throw new NotFoundException('Profil propriétaire introuvable');
 
+    await this.ensureOwnerInOrganization(ownerId, admin.organizationId);
+    if (createPropertyDto.managerId) {
+      await this.ensureManagerInOrganization(
+        createPropertyDto.managerId,
+        admin.organizationId,
+      );
+    }
+
     return this.prisma.property.create({
       data: {
         ...createPropertyDto,
@@ -36,10 +44,11 @@ export class PropertiesService {
     });
   }
 
-  async findAll(user: JwtPayload): Promise<Property[]> {
+  async findAll(user: RequestUser): Promise<Property[]> {
     // 1. ADMIN : Voit tout
     if (user.role === UserRole.ADMIN) {
       return this.prisma.property.findMany({
+        where: { organizationId: user.organizationId },
         include: this.getPropertyIncludeRelations(),
         orderBy: { createdAt: 'desc' },
       });
@@ -48,12 +57,15 @@ export class PropertiesService {
     // 2. MANAGER (Manager) : Voit uniquement les biens qu'il gère
     if (user.role === UserRole.MANAGER) {
       const managerProfile = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (!managerProfile) return []; // Ne devrait pas arriver si le profil est créé
 
       return this.prisma.property.findMany({
-        where: { managerId: managerProfile.id },
+        where: {
+          managerId: managerProfile.id,
+          organizationId: user.organizationId,
+        },
         include: this.getPropertyIncludeRelations(),
       });
     }
@@ -61,12 +73,12 @@ export class PropertiesService {
     // 3. OWNER : Voit uniquement ses propres biens
     if (user.role === UserRole.OWNER) {
       const ownerProfile = await this.prisma.owner.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (!ownerProfile) return [];
 
       return this.prisma.property.findMany({
-        where: { ownerId: ownerProfile.id },
+        where: { ownerId: ownerProfile.id, organizationId: user.organizationId },
         include: this.getPropertyIncludeRelations(),
       });
     }
@@ -75,7 +87,7 @@ export class PropertiesService {
     return [];
   }
 
-  async findOne(id: number, user: JwtPayload): Promise<Property> {
+  async findOne(id: number, user: RequestUser): Promise<Property> {
     const property = await this.prisma.property.findUnique({
       where: { id },
       include: {
@@ -93,7 +105,7 @@ export class PropertiesService {
       },
     });
 
-    if (!property) {
+    if (!property || property.organizationId !== user.organizationId) {
       throw new NotFoundException(`Propriété #${id} introuvable.`);
     }
 
@@ -106,14 +118,14 @@ export class PropertiesService {
   async update(
     id: number,
     updatePropertyDto: UpdatePropertyDto,
-    user: JwtPayload,
+    user: RequestUser,
   ): Promise<Property> {
     const property = await this.prisma.property.findUnique({
       where: { id },
       include: { manager: true },
     });
 
-    if (!property) {
+    if (!property || property.organizationId !== user.organizationId) {
       throw new NotFoundException(`Propriété avec l'ID "${id}" introuvable.`);
     }
 
@@ -130,11 +142,10 @@ export class PropertiesService {
           'Seul un administrateur peut changer le propriétaire.',
         );
       }
-      const ownerExists = await this.prisma.owner.findUnique({
-        where: { id: updatePropertyDto.ownerId },
-      });
-      if (!ownerExists)
-        throw new NotFoundException('Nouveau propriétaire introuvable.');
+      await this.ensureOwnerInOrganization(
+        updatePropertyDto.ownerId,
+        user.organizationId,
+      );
     }
 
     // 3. Validation changement Manager (Réservé ADMIN)
@@ -149,11 +160,10 @@ export class PropertiesService {
           'Seul un administrateur peut changer le gestionnaire.',
         );
       }
-      const managerExists = await this.prisma.manager.findUnique({
-        where: { id: updatePropertyDto.managerId },
-      });
-      if (!managerExists)
-        throw new NotFoundException('Nouveau gestionnaire introuvable.');
+      await this.ensureManagerInOrganization(
+        updatePropertyDto.managerId,
+        user.organizationId,
+      );
     }
 
     try {
@@ -173,7 +183,7 @@ export class PropertiesService {
     }
   }
 
-  async remove(id: number, user: JwtPayload): Promise<Property> {
+  async remove(id: number, user: RequestUser): Promise<Property> {
     // 1. RBAC Check : SEUL ADMIN peut supprimer
     if (user.role !== UserRole.ADMIN) {
       throw new ForbiddenException(
@@ -196,7 +206,7 @@ export class PropertiesService {
       },
     });
 
-    if (!property) {
+    if (!property || property.organizationId !== user.organizationId) {
       throw new NotFoundException(`Propriété #${id} introuvable.`);
     }
 
@@ -249,20 +259,24 @@ export class PropertiesService {
    */
   private async checkAccessPermission(
     property: Property,
-    user: JwtPayload,
+    user: RequestUser,
   ): Promise<void> {
+    if (property.organizationId !== user.organizationId) {
+      throw new NotFoundException(`Propriété #${property.id} introuvable.`);
+    }
+
     if (user.role === UserRole.ADMIN) return;
 
     if (user.role === UserRole.MANAGER) {
       const manager = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (property.managerId === manager?.id) return;
     }
 
     if (user.role === UserRole.OWNER) {
       const owner = await this.prisma.owner.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       if (property.ownerId === owner?.id) return;
     }
@@ -275,14 +289,18 @@ export class PropertiesService {
    */
   private async checkManagementPermission(
     property: Property,
-    user: JwtPayload,
+    user: RequestUser,
     action: string,
   ): Promise<void> {
+    if (property.organizationId !== user.organizationId) {
+      throw new NotFoundException(`Propriété #${property.id} introuvable.`);
+    }
+
     if (user.role === UserRole.ADMIN) return;
 
     if (user.role === UserRole.MANAGER) {
       const manager = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
+        where: { userId: user.id },
       });
       // Seul le manager assigné peut modifier
       if (property.managerId === manager?.id) return;
@@ -294,5 +312,22 @@ export class PropertiesService {
     throw new ForbiddenException(
       `Vous n'êtes pas autorisé à ${action} cette propriété.`,
     );
+  }
+
+  private async ensureOwnerInOrganization(ownerId: number, organizationId: number) {
+    const owner = await this.prisma.owner.findFirst({
+      where: { id: ownerId, user: { organizationId } },
+    });
+    if (!owner) throw new NotFoundException('Propriétaire introuvable.');
+  }
+
+  private async ensureManagerInOrganization(
+    managerId: number,
+    organizationId: number,
+  ) {
+    const manager = await this.prisma.manager.findFirst({
+      where: { id: managerId, user: { organizationId } },
+    });
+    if (!manager) throw new NotFoundException('Gestionnaire introuvable.');
   }
 }

@@ -7,7 +7,6 @@ import {
   Param,
   Delete,
   ParseIntPipe,
-  UseGuards,
 } from '@nestjs/common';
 import { OwnersService } from './owners.service';
 import { CreateOwnerDto } from './dto/create-owner.dto';
@@ -16,7 +15,7 @@ import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 
 @Controller('owners')
 export class OwnersController {
@@ -24,21 +23,24 @@ export class OwnersController {
 
   @Post()
   @Roles(UserRole.ADMIN)
-  create(@Body() createOwnerDto: CreateOwnerDto) {
-    return this.ownersService.create(createOwnerDto);
+  create(
+    @Body() createOwnerDto: CreateOwnerDto,
+    @GetCurrentUser() user: RequestUser,
+  ) {
+    return this.ownersService.create(user.id, createOwnerDto);
   }
 
   @Get()
   @Roles(UserRole.ADMIN)
-  findAll() {
-    return this.ownersService.findAll();
+  findAll(@GetCurrentUser() user: RequestUser) {
+    return this.ownersService.findAll(user);
   }
 
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.OWNER)
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.ownersService.findOne(id, user);
   }
@@ -48,7 +50,7 @@ export class OwnersController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateOwnerDto: UpdateOwnerDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.ownersService.update(id, updateOwnerDto, user);
   }
@@ -58,13 +60,17 @@ export class OwnersController {
   updateStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateStatusDto: UpdateStatusDto,
+    @GetCurrentUser() user: RequestUser,
   ) {
-    return this.ownersService.updateStatus(id, updateStatusDto);
+    return this.ownersService.updateStatus(id, updateStatusDto, user);
   }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN)
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.ownersService.remove(id);
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @GetCurrentUser() user: RequestUser,
+  ) {
+    return this.ownersService.remove(id, user);
   }
 }

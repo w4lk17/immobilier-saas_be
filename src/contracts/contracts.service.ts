@@ -8,9 +8,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractDto } from './dto/update-contract.dto';
-import { ContractStatus, InvoiceStatus, InvoiceType, User } from '@prisma/client';
-import { PdfService } from 'src/pdf/pdf.service';
-import { StorageService } from 'src/storage/storage.service';
+import { ContractStatus, InvoiceStatus, InvoiceType, Prisma, UserRole } from '@prisma/client';
+import { PdfService } from '../pdf/pdf.service';
+import { StorageService } from '../storage/storage.service';
+import { RequestUser } from '../auth/types';
 
 export interface LeasePdfPayload {
   // Infos du contrat
@@ -113,7 +114,7 @@ export class ContractsService {
     // Vérifie si le locataire a déjà un contrat actif pour cette location
     const existingContract = await this.prisma.contract.findFirst({
       where: {
-        tenantId: dto.tenantId,
+        tenantId: tenantUser.tenantProfile.id,
         designation: dto.designation,
         status: { in: ['PENDING', 'ACTIVE'] },
       },
@@ -304,16 +305,19 @@ export class ContractsService {
         timeout: 30000 // Augmente le délai à 30 secondes (30000 ms) au lieu de 5000 ms
       });
 
-      return this.findOne(contract.id, admin.organizationId);
+      return this.findOneForOrganization(contract.id, admin.organizationId);
     } catch (error) {
       console.error(error);
       throw new InternalServerErrorException("Erreur création contrat");
     }
   }
 
-  async findAll(orgId: number) {
+  async findAll(user: RequestUser) {
+    const accessWhere = await this.buildAccessWhere(user);
+    if (!accessWhere) return [];
+
     return this.prisma.contract.findMany({
-      where: { organizationId: orgId },
+      where: accessWhere,
       include: {
         tenant: { include: { user: true } }, // Pour afficher nom locataire
         owner: { include: { user: true } },
@@ -328,9 +332,12 @@ export class ContractsService {
   }
 
 
-  async findOne(id: number, orgId: number) {
+  async findOne(id: number, user: RequestUser) {
+    const accessWhere = await this.buildAccessWhere(user, id);
+    if (!accessWhere) throw new NotFoundException('Contrat introuvable');
+
     const contract = await this.prisma.contract.findFirst({
-      where: { id, organizationId: orgId },
+      where: accessWhere,
       include: {
         tenant: { include: { user: true } },
         owner: { include: { user: true } },
@@ -346,7 +353,7 @@ export class ContractsService {
 
 
   async update(id: number, orgId: number, dto: UpdateContractDto) {
-    await this.findOne(id, orgId); // Check existence
+    await this.findOneForOrganization(id, orgId); // Check existence
 
     return this.prisma.contract.update({
       where: { id },
@@ -362,7 +369,7 @@ export class ContractsService {
 
   async terminate(id: number, orgId: number) {
 
-    const contract = await this.findOne(id, orgId);
+    const contract = await this.findOneForOrganization(id, orgId);
 
     // Check if contract is already terminated or expired
     if (contract.status === ContractStatus.TERMINATED) {
@@ -397,7 +404,7 @@ export class ContractsService {
   }
 
   async remove(id: number, orgId: number) {
-    const contract = await this.findOne(id, orgId);
+    const contract = await this.findOneForOrganization(id, orgId);
 
     // Soft delete ou Hard delete ?
     // Pour MVP, on fait un soft delete (désactivation) ou on garde l'historique.
@@ -450,5 +457,52 @@ export class ContractsService {
     const sequenceStr = nextSequence.toString().padStart(4, '0');
 
     return `${prefix}${sequenceStr}`;
+  }
+
+  private async buildAccessWhere(
+    user: RequestUser,
+    id?: number,
+  ): Promise<Prisma.ContractWhereInput | null> {
+    const baseWhere: Prisma.ContractWhereInput = {
+      organizationId: user.organizationId,
+      ...(id ? { id } : {}),
+    };
+
+    if (user.role === UserRole.ADMIN) {
+      return baseWhere;
+    }
+
+    if (user.role === UserRole.TENANT) {
+      const tenantProfile = await this.prisma.tenant.findUnique({
+        where: { userId: user.id },
+        select: { id: true },
+      });
+
+      if (!tenantProfile) return null;
+
+      return {
+        ...baseWhere,
+        tenantId: tenantProfile.id,
+      };
+    }
+
+    return null;
+  }
+
+  private async findOneForOrganization(id: number, orgId: number) {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id, organizationId: orgId },
+      include: {
+        tenant: { include: { user: true } },
+        owner: { include: { user: true } },
+        invoices: { orderBy: { dueDate: 'desc' }, take: 5 },
+        _count: {
+          select: { invoices: true },
+        },
+      },
+    });
+
+    if (!contract) throw new NotFoundException('Contrat introuvable');
+    return contract;
   }
 }

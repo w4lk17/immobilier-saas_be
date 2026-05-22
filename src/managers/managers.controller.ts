@@ -15,7 +15,7 @@ import { UpdateStatusDto } from '../common/dto/update-status.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 
 @Controller('managers')
 export class ManagersController {
@@ -23,21 +23,24 @@ export class ManagersController {
 
   @Post()
   @Roles(UserRole.ADMIN)
-  create(@Body() createManagerDto: CreateManagerDto) {
-    return this.managersService.create(createManagerDto);
+  create(
+    @Body() createManagerDto: CreateManagerDto,
+    @GetCurrentUser() user: RequestUser,
+  ) {
+    return this.managersService.create(user.id, createManagerDto);
   }
 
   @Get()
   @Roles(UserRole.ADMIN)
-  findAll() {
-    return this.managersService.findAll();
+  findAll(@GetCurrentUser() user: RequestUser) {
+    return this.managersService.findAll(user);
   }
 
   @Get(':id')
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.managersService.findOne(id, user);
   }
@@ -47,7 +50,7 @@ export class ManagersController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateManagerDto: UpdateManagerDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.managersService.update(id, updateManagerDto, user);
   }
@@ -57,13 +60,17 @@ export class ManagersController {
   updateStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateStatusDto: UpdateStatusDto,
+    @GetCurrentUser() user: RequestUser,
   ) {
-    return this.managersService.updateStatus(id, updateStatusDto);
+    return this.managersService.updateStatus(id, updateStatusDto, user);
   }
 
   @Delete(':id')
   @Roles(UserRole.ADMIN)
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.managersService.remove(id);
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @GetCurrentUser() user: RequestUser,
+  ) {
+    return this.managersService.remove(id, user);
   }
 }
