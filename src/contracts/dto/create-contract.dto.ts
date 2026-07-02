@@ -78,7 +78,7 @@ export class CreateContractDto {
 
   // Locataire
   @IsNumber()
-  tenantId: number; // ID de l'utilisateur (User.id)
+  tenantId: number; // ID utilisateur du locataire (User.id), pas l'ID du profil Tenant.
 
   // Bien (MVP)
   @IsString()

@@ -12,6 +12,7 @@ import { ContractsModule } from './contracts/contracts.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { BillingModule } from './billing/billing.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AppController } from './app.controller';
@@ -36,6 +37,7 @@ import { RentalsModule } from './rentals/rentals.module';
     InvoicesModule,
     BillingModule,
     ExpensesModule,
+    DashboardModule,
   ],
   controllers: [AppController], // AppController can be removed if not used
   providers: [

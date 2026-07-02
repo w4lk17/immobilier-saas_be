@@ -76,7 +76,7 @@ export class TenantsService {
         include: { tenantProfile: true },
       });
 
-      // TODO: Envoyer Email avec tempPassword
+      // TODO: Envoyer Email et SMS contenant les info de connexion email et tempPassword
       console.log(`Tenant created for ${data.email}. Temp pass: ${tempPassword}`);
 
       const { password, ...result } = newUser;

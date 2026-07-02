@@ -21,7 +21,7 @@ function makeInvoiceNumber(prefix = 'INV'): string {
 
 @Injectable()
 export class InvoicesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async create(
     createInvoiceDto: CreateInvoiceDto,
@@ -62,13 +62,14 @@ export class InvoicesService {
       );
     }
 
-    const invoiceNumber = createInvoiceDto.invoiceNumber || makeInvoiceNumber();
+    const invoiceNumber = createInvoiceDto.invoiceNumber || makeInvoiceNumber('RENT');
 
     try {
       return await this.prisma.invoice.create({
         data: {
           ...createInvoiceDto,
           invoiceNumber,
+          // dueDate: // a ajouter ici  le jour de date d'echeance calculer
           organizationId: user.organizationId,
         },
         include: { contract: true, tenant: { include: { user: true } } },
@@ -82,7 +83,9 @@ export class InvoicesService {
   async findAll(user: RequestUser): Promise<Invoice[]> {
     const queryArgs: any = {
       include: {
-        contract: { include: { property: true } },
+        contract: {
+          include: { property: { include: { owner: true } }, manager: true, owner: { include: { user: true } }, },
+        },
         tenant: { include: { user: true } },
         transactions: true,
       },
@@ -124,7 +127,7 @@ export class InvoicesService {
       where: { id },
       include: {
         contract: {
-          include: { property: { include: { owner: true } }, manager: true },
+          include: { property: { include: { owner: true } }, manager: true, owner: { include: { user: true } }, },
         },
         tenant: { include: { user: true } },
         transactions: true,

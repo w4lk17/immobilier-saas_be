@@ -1,53 +1,46 @@
 import {
   Injectable,
   InternalServerErrorException,
-  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import AfricasTalking from 'africastalking';
+import { AfricasTalkingSmsProvider } from './providers/africastalking-sms.provider';
+import { TwilioSmsProvider } from './providers/twilio-sms.provider';
+import { SmsProvider } from './interfaces/sms-provider.interface';
+
+type SmsProviderName = 'africastalking' | 'twilio';
 
 @Injectable()
 export class SmsService {
-  private readonly logger = new Logger(SmsService.name);
-
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly africasTalkingProvider: AfricasTalkingSmsProvider,
+    private readonly twilioProvider: TwilioSmsProvider,
+  ) {}
 
   async sendOtp(phone: string, otp: string): Promise<void> {
-    const smsClient = this.createSmsClient();
-    const senderId = this.configService.get<string>('AT_SENDER_ID');
-    const enqueue = this.configService.get<string>('AT_ENQUEUE') === 'true';
-
-    const options = {
-      to: [phone],
-      message: `Votre code de verification est ${otp}. Il expire dans 10 minutes.`,
-      ...(senderId ? { senderId } : {}),
-      ...(enqueue ? { enqueue } : {}),
-    };
-
-    try {
-      await smsClient.send(options);
-    } catch (error) {
-      this.logger.error(
-        `Failed to send OTP SMS to ${phone}`,
-        error instanceof Error ? error.stack : String(error),
-      );
-      throw new InternalServerErrorException(
-        "Impossible d'envoyer le code OTP par SMS.",
-      );
-    }
+    await this.getProvider().sendOtp(phone, otp);
   }
 
-  private createSmsClient(): { send(options: unknown): Promise<unknown> } {
-    const username = this.configService.get<string>('AT_USERNAME');
-    const apiKey = this.configService.get<string>('AT_API_KEY');
+  private getProvider(): SmsProvider {
+    const provider = this.getProviderName();
 
-    if (!username || !apiKey) {
-      throw new InternalServerErrorException(
-        'Africa Talking SMS configuration is missing.',
-      );
+    if (provider === 'africastalking') {
+      return this.africasTalkingProvider;
     }
 
-    const client = AfricasTalking({ username, apiKey });
-    return client.SMS;
+    return this.twilioProvider;
+  }
+
+  private getProviderName(): SmsProviderName {
+    const provider =
+      this.configService.get<string>('SMS_PROVIDER') ?? 'africastalking';
+
+    if (provider === 'africastalking' || provider === 'twilio') {
+      return provider;
+    }
+
+    throw new InternalServerErrorException(
+      'SMS_PROVIDER doit etre "africastalking" ou "twilio".',
+    );
   }
 }

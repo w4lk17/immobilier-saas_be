@@ -668,7 +668,7 @@ async function main() {
         dueDate: new Date(),
         contractId: contract1.id,
         tenantId: tenant1Profile.id,
-        organizationId: org1.id, // Lien Org
+        organizationId: org1.id,
       }
     });
     console.log('Contract and Invoice created');

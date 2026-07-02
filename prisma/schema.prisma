@@ -324,7 +324,7 @@ model Contract {
   // --- NOUVEAU : Champs MVP pour bien ---
   designation        String
   address            String
-  reference          String? @unique
+  reference          String?
   // -------------------------------------
   
   rentAmount         Float
@@ -366,6 +366,7 @@ model Contract {
   
   invoices Invoice[]
 
+  @@unique([organizationId, reference])
   @@map("contracts")
 }
 

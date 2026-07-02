@@ -149,8 +149,8 @@ export class ContractsService {
             rentAdvance: dto.rentAdvance || 0,
             rentAmount: dto.rentAmount,
             chargesAmount: dto.chargesAmount || 0,
-            depositAmount: dto.depositAmount || 0, //totalDepositAmount
-            advanceAmount: dto.advanceAmount || 0, //totalAdvanceAmount
+            depositAmount: totalDepositAmount || 0, // dto.depositAmount || 0, //totalDepositAmount
+            advanceAmount: totalAdvanceAmount ||0, //dto.advanceAmount || 0, //totalAdvanceAmount
             startDate: new Date(dto.startDate),
             endDate: dto.endDate ? new Date(dto.endDate) : null,
             paymentStartAfter: dto.paymentStartAfter || 0,
@@ -196,9 +196,9 @@ export class ContractsService {
               tenantId: tenantUser.tenantProfile!.id,
               organizationId: admin.organizationId,
               amountDue: totalAdvanceAmount,
-              paidAmount: totalAdvanceAmount, // IMPORTANT : Déjà "payé" (crédit disponible)
+              paidAmount: totalAdvanceAmount, 
               type: InvoiceType.ADVANCE,
-              status: InvoiceStatus.PAID, // Statut payé
+              status: InvoiceStatus.PAID, 
               dueDate: createdContract.startDate,
               paidDate: createdContract.startDate,
             },
@@ -224,8 +224,8 @@ export class ContractsService {
           firstRentDueDate = addMonths(createdContract.startDate, 1);
         }
 
-        // Ajustement au jour de prélèvement (ex: le 5 du mois)
-        const paymentDay = dto.dayAddToPaymentDay || 1;
+        // Ajustement au jour de echeance (ex: le 5 du mois)
+        const paymentDay = dto.dayAddToPaymentDay || 5;
         firstRentDueDate = setDayOfMonth(firstRentDueDate, paymentDay);
 
         // Création de la facture de Loyer
@@ -246,35 +246,35 @@ export class ContractsService {
         // ==========================================
         // D. PRÉPARATION DES DONNÉES POUR LE PDF
         // ==========================================
-        const pdfData: LeasePdfPayload = {
-          reference: reference,
-          designation: dto.designation,
-          address: dto.address,
-          rentAmount: dto.rentAmount,
-          chargesAmount: dto.chargesAmount || 0,
-          depositAmount: dto.depositAmount || 0,
-          startDate: new Date(dto.startDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
-          endDate: dto.endDate ? new Date(dto.endDate).toISOString() : undefined,
+        // const pdfData: LeasePdfPayload = {
+        //   reference: reference,
+        //   designation: dto.designation,
+        //   address: dto.address,
+        //   rentAmount: dto.rentAmount,
+        //   chargesAmount: dto.chargesAmount || 0,
+        //   depositAmount: dto.depositAmount || 0,
+        //   startDate: new Date(dto.startDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
+        //   endDate: dto.endDate ? new Date(dto.endDate).toISOString() : undefined,
 
-          // On utilise les données récupérées en début de fonction !
-          ownerFullName: `${admin.lastName} ${admin.firstName}`,
-          ownerAddress: admin.address || undefined,
-          ownerProfession: admin.occupation || undefined,
-          ownerPhoneNumber: admin.phoneNumber || "",
+        //   // On utilise les données récupérées en début de fonction !
+        //   ownerFullName: `${admin.lastName} ${admin.firstName}`,
+        //   ownerAddress: admin.address || undefined,
+        //   ownerProfession: admin.occupation || undefined,
+        //   ownerPhoneNumber: admin.phoneNumber || "",
 
-          // tenantTest: tenantUser,
-          tenantFullName: `${tenantUser.lastName} ${tenantUser.firstName}`,
-          tenantBirthDate: tenantUser.dateOfBirth ? tenantUser.dateOfBirth.toLocaleDateString('fr-FR') : undefined,
-          tenantAddress: tenantUser.address || undefined,
-          tenantProfession: tenantUser.occupation || undefined,
-          tenantPhoneNumber: tenantUser.phoneNumber || "",
-        };
+        //   // tenantTest: tenantUser,
+        //   tenantFullName: `${tenantUser.lastName} ${tenantUser.firstName}`,
+        //   tenantBirthDate: tenantUser.dateOfBirth ? tenantUser.dateOfBirth.toLocaleDateString('fr-FR') : undefined,
+        //   tenantAddress: tenantUser.address || undefined,
+        //   tenantProfession: tenantUser.occupation || undefined,
+        //   tenantPhoneNumber: tenantUser.phoneNumber || "",
+        // };
 
         // ==========================================
         // E. GÉNÉRATION DU FICHIER PDF (En mémoire)
         // ==========================================
         // Le service PdfService prendra les données et retournera un Buffer (le fichier binaire)
-        const pdfBuffer = await this.pdfService.generateLeasePdf(pdfData);
+        // const pdfBuffer = await this.pdfService.generateLeasePdf(pdfData);
 
         // ==========================================
         // F. SAUVEGARDE DU FICHIER (Stockage)
@@ -282,7 +282,7 @@ export class ContractsService {
         // On définit le chemin de stockage, ex: "contracts/BAIL-2024-0001.pdf"
         const storagePath = `contracts/${reference}.pdf`;
         // Le service StorageService upload le Buffer et retourne l'URL publique/privée
-        const pdfUrl = await this.storageService.uploadFile(pdfBuffer, storagePath);
+        // const pdfUrl = await this.storageService.uploadFile(pdfBuffer, storagePath);
 
 
 
@@ -294,7 +294,7 @@ export class ContractsService {
           data: {
             depositAmount: totalDepositAmount,
             advanceAmount: totalAdvanceAmount, // On sauvegarde l'avance initiale
-            pdfUrl: pdfUrl, // mise a jour du contrat avec l' URL du pdf
+            // pdfUrl: pdfUrl, // mise a jour du contrat avec l' URL du pdf
           },
         });
 
@@ -424,6 +424,10 @@ export class ContractsService {
  * Génère une référence unique de type BAIL-YYYY-0001
  * Doit être exécutée à l'intérieur d'une transaction Prisma
  */
+  /**
+   * Génère une référence unique de type BAIL-YYYY-0001
+   * Prend en compte la séquence max réelle et peut être utilisée en retry si P2002.
+   */
   private async generateContractReference(
     tx: any, // 'any' temporaire, ou utilise le type Prisma.TransactionClient si tu l'as importé
     organizationId: number,
@@ -431,31 +435,32 @@ export class ContractsService {
     const year = new Date().getFullYear().toString();
     const prefix = `BAIL-${year}-`;
 
-    // On cherche le dernier contrat créé pour cette organisation avec ce préfixe
-    const lastContract = await tx.contract.findFirst({
+    // On cherche toutes les références du pattern pour cette org/année
+    const contracts = await tx.contract.findMany({
       where: {
-        organizationId: organizationId,
+        organizationId,
         reference: {
           startsWith: prefix,
         },
       },
-      orderBy: {
-        createdAt: 'desc', // On prend le plus récent
-      },
+      select: { reference: true },
     });
 
-    let nextSequence = 1;
-
-    if (lastContract) {
-      // On extrait les 4 derniers caractères (ex: "0003" -> 3)
-      const lastSequenceStr = lastContract.reference.slice(-4);
-      const lastSequence = parseInt(lastSequenceStr, 10);
-      nextSequence = lastSequence + 1;
+    // Trouver la séquence max dans les références existantes BAIL-YYYY-000X
+    let maxSeq = 0;
+    for (const c of contracts) {
+      const ref = c.reference;
+      const m = ref.match(/^BAIL-\d{4}-(\d{4})$/);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
     }
 
-    // On formate avec des zéros initiaux pour toujours avoir 4 chiffres (ex: 4 -> "0004")
+    const nextSequence = maxSeq + 1;
     const sequenceStr = nextSequence.toString().padStart(4, '0');
-
     return `${prefix}${sequenceStr}`;
   }
 
