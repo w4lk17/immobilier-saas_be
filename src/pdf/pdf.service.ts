@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PuppeteerEngine } from './engines/puppeteer.engine';
-import { LeasePdfPayload } from 'src/contracts/contracts.service';
-// import { ReactPdfEngine } from './engines/react-pdf.engine';
+import { LeasePdfPayload } from '../contracts/contracts.service';
 
 @Injectable()
 export class PdfService {

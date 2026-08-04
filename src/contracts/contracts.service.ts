@@ -8,7 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractDto } from './dto/update-contract.dto';
-import { ContractStatus, InvoiceStatus, InvoiceType, Prisma, UserRole } from '@prisma/client';
+import { ContractStatus, InvoiceStatus, InvoiceType, Prisma, RentalStatus, RentalType, UserRole } from '@prisma/client';
 import { PdfService } from '../pdf/pdf.service';
 import { StorageService } from '../storage/storage.service';
 import { RequestUser } from '../auth/types';
@@ -105,23 +105,38 @@ export class ContractsService {
       throw new NotFoundException('Profil locataire introuvable pour cet utilisateur');
     }
 
+    const tenantProfileId = tenantUser.tenantProfile.id;
+
+    // 4. Vérifier la disponibilité du rental       
+    const rental = await this.prisma.rental.findUnique({
+      where: { id: dto.rentalId },
+    });
+
+    if (!rental) {
+      throw new NotFoundException('Unité locative introuvable');
+    }
+
     // 3. Gestion du Profil Owner (Créateur = Propriétaire bailleur)
     let ownerProfile = admin.ownerProfile;
     if (!ownerProfile) {
       ownerProfile = await this.prisma.owner.create({ data: { userId: adminId } });
     }
 
-    // Vérifie si le locataire a déjà un contrat actif pour cette location
+    // 5.  Vérifie si le locataire a déjà un contrat actif pour cette location
     const existingContract = await this.prisma.contract.findFirst({
       where: {
-        tenantId: tenantUser.tenantProfile.id,
-        designation: dto.designation,
+        tenantId: tenantProfileId,
+        rentalId: dto.rentalId,
         status: { in: ['PENDING', 'ACTIVE'] },
       },
     });
 
     if (existingContract) {
       throw new ConflictException(`Le locataire possède déjà un contrat actif pour cette location.`);
+    }
+
+    if (rental.status !== RentalStatus.AVAILABLE) {
+      throw new ConflictException("Cette unité locative n'est pas disponible.");
     }
 
     try {
@@ -142,26 +157,25 @@ export class ContractsService {
         // A. Création du Contrat
         const createdContract = await tx.contract.create({
           data: {
-            designation: dto.designation,
-            address: dto.address,
+            propertyId: dto.propertyId,
+            rentalId: dto.rentalId,
+            ownerId: dto.ownerId,
+            tenantId: tenantProfileId,
             reference: reference,
             rentDeposit: dto.rentDeposit || 0,
             rentAdvance: dto.rentAdvance || 0,
             rentAmount: dto.rentAmount,
             chargesAmount: dto.chargesAmount || 0,
             depositAmount: totalDepositAmount || 0, // dto.depositAmount || 0, //totalDepositAmount
-            advanceAmount: totalAdvanceAmount ||0, //dto.advanceAmount || 0, //totalAdvanceAmount
+            advanceAmount: totalAdvanceAmount || 0, //dto.advanceAmount || 0, //totalAdvanceAmount
             startDate: new Date(dto.startDate),
             endDate: dto.endDate ? new Date(dto.endDate) : null,
             paymentStartAfter: dto.paymentStartAfter || 0,
             dayAddToPaymentDay: dto.dayAddToPaymentDay || 1,
             status: ContractStatus.ACTIVE,
             leaseType: dto.leaseType,
+            organizationId: admin.organizationId,
 
-            // Relations
-            tenant: { connect: { userId: dto.tenantId } },
-            owner: { connect: { id: ownerProfile.id } },
-            organization: { connect: { id: admin.organizationId } },
           },
         });
 
@@ -173,7 +187,7 @@ export class ContractsService {
             data: {
               invoiceNumber: makeInvoiceNumber('DEP'),
               contractId: createdContract.id,
-              tenantId: tenantUser.tenantProfile!.id,
+              tenantId: tenantProfileId,
               organizationId: admin.organizationId,
               amountDue: totalDepositAmount,
               paidAmount: totalDepositAmount, // payer à la signature
@@ -193,12 +207,12 @@ export class ContractsService {
             data: {
               invoiceNumber: makeInvoiceNumber('ADV'),
               contractId: createdContract.id,
-              tenantId: tenantUser.tenantProfile!.id,
+              tenantId: tenantProfileId,
               organizationId: admin.organizationId,
               amountDue: totalAdvanceAmount,
-              paidAmount: totalAdvanceAmount, 
+              paidAmount: totalAdvanceAmount,
               type: InvoiceType.ADVANCE,
-              status: InvoiceStatus.PAID, 
+              status: InvoiceStatus.PAID,
               dueDate: createdContract.startDate,
               paidDate: createdContract.startDate,
             },
@@ -233,7 +247,7 @@ export class ContractsService {
           data: {
             invoiceNumber: makeInvoiceNumber('RENT'),
             contractId: createdContract.id,
-            tenantId: tenantUser.tenantProfile!.id,
+            tenantId: tenantProfileId,
             organizationId: admin.organizationId,
             amountDue: dto.rentAmount + (dto.chargesAmount || 0),
             paidAmount: 0,
@@ -280,7 +294,7 @@ export class ContractsService {
         // F. SAUVEGARDE DU FICHIER (Stockage)
         // ==========================================
         // On définit le chemin de stockage, ex: "contracts/BAIL-2024-0001.pdf"
-        const storagePath = `contracts/${reference}.pdf`;
+        // const storagePath = `contracts/${reference}.pdf`;
         // Le service StorageService upload le Buffer et retourne l'URL publique/privée
         // const pdfUrl = await this.storageService.uploadFile(pdfBuffer, storagePath);
 
@@ -296,6 +310,14 @@ export class ContractsService {
             advanceAmount: totalAdvanceAmount, // On sauvegarde l'avance initiale
             // pdfUrl: pdfUrl, // mise a jour du contrat avec l' URL du pdf
           },
+        });
+
+
+        // --- 4. MISE À JOUR DU STATUS DU LOCAL ---
+        // On change le local en OCCUPE
+        await tx.rental.update({
+          where: { id: dto.rentalId },
+          data: { status: RentalStatus.OCCUPIED }
         });
 
 
@@ -319,8 +341,10 @@ export class ContractsService {
     return this.prisma.contract.findMany({
       where: accessWhere,
       include: {
-        tenant: { include: { user: true } }, // Pour afficher nom locataire
+        tenant: { include: { user: true } },
         owner: { include: { user: true } },
+        property: true,
+        rental: { include: { property: true } },
         _count: {
           select: {
             invoices: true,
@@ -341,6 +365,8 @@ export class ContractsService {
       include: {
         tenant: { include: { user: true } },
         owner: { include: { user: true } },
+        property: true,
+        rental: { include: { property: true } },
         invoices: { orderBy: { dueDate: 'desc' }, take: 5 },
         _count: {
           select: { invoices: true },
@@ -389,12 +415,12 @@ export class ContractsService {
         },
       });
       // Update rental status back to AVAILABLE (unless it was BOOKED)
-      // if (contract.rental.status === RentalStatus.OCCUPIED) {
-      //   await this.prisma.rental.update({
-      //     where: { id: contract.rentalId },
-      //     data: { status: RentalStatus.AVAILABLE },
-      //   });
-      // }
+      if (contract.rental.status === RentalStatus.OCCUPIED) {
+        await this.prisma.rental.update({
+          where: { id: contract.rentalId },
+          data: { status: RentalStatus.AVAILABLE },
+        });
+      }
 
       return terminatedContract;
     } catch (error) {
@@ -406,17 +432,50 @@ export class ContractsService {
   async remove(id: number, orgId: number) {
     const contract = await this.findOneForOrganization(id, orgId);
 
-    // Soft delete ou Hard delete ?
-    // Pour MVP, on fait un soft delete (désactivation) ou on garde l'historique.
-    // Si tu veux hard delete, attention aux factures.
-    // Je conseille de juste changer le statut à TERMINATED ou supprimer.
-    // Hard delete - attention aux factures si FK restrict
-    // Pour MVP on suppose onDelete Cascade ou on supprime les factures manuellement
-    await this.prisma.invoice.deleteMany({ where: { contractId: id } });
-    await this.prisma.contract.delete({ where: { id } });
-    return { message: "Contrat supprimé" };
-  }
+    // Restriction: suppression réelle interdite pour assurer la traçabilité.
+    // On applique un soft delete : le contrat passe en TERMINATED, avec horodatage fin.
+    if (contract.status === ContractStatus.TERMINATED) {
+      throw new ConflictException('Le contrat est déjà résilié/supprimé.');
+    }
+    if (contract.status === ContractStatus.EXPIRED) {
+      throw new ConflictException("Impossible de supprimer un contrat expiré.");
+    }
 
+    // Nouvelle règle : interdiction de supprimer si des factures existent pour ce contrat
+    const relatedInvoicesCount = await this.prisma.invoice.count({
+      where: {
+        contractId: contract.id,
+      },
+    });
+    if (relatedInvoicesCount > 0) {
+      throw new ConflictException(
+        "Impossible de supprimer ce contrat : des factures y sont associées."
+      );
+    }
+
+    try {
+      const terminatedContract = await this.prisma.contract.update({
+        where: { id },
+        data: {
+          status: ContractStatus.TERMINATED,
+          endDate: new Date(),
+        },
+      });
+
+      // Libérer l'unité locative si besoin
+      if (contract.rental?.status === RentalStatus.OCCUPIED) {
+        await this.prisma.rental.update({
+          where: { id: contract.rentalId },
+          data: { status: RentalStatus.AVAILABLE },
+        });
+      }
+
+      return { message: "Contrat résilié avec succès." }; 
+    } catch (error) {
+      console.error(error);
+      throw new InternalServerErrorException("Erreur lors de la suppression (résiliation) du contrat");
+    }
+  }
 
 
 
@@ -500,6 +559,7 @@ export class ContractsService {
       include: {
         tenant: { include: { user: true } },
         owner: { include: { user: true } },
+        rental: { include: { property: true } },
         invoices: { orderBy: { dueDate: 'desc' }, take: 5 },
         _count: {
           select: { invoices: true },

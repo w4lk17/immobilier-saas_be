@@ -76,18 +76,35 @@ export class CreateContractDto {
   // status?: ContractStatus; // Defaults to ACTIVE
 
 
+  @IsInt()
+  @IsNotEmpty()
+  ownerId: number;
+
+  @IsInt()
+  @IsNotEmpty()
+  propertyId: number;
+
+  @IsInt()
+  @IsNotEmpty()
+  rentalId: number;
+
   // Locataire
   @IsNumber()
+  @IsNotEmpty()
   tenantId: number; // ID utilisateur du locataire (User.id), pas l'ID du profil Tenant.
 
-  // Bien (MVP)
-  @IsString()
-  @IsNotEmpty()
-  designation: string;
+  @IsInt()
+  @IsOptional()
+  managerId?: number;
 
-  @IsString()
-  @IsNotEmpty()
-  address: string;
+  // Bien (MVP)
+  // @IsString()
+  // @IsNotEmpty()
+  // designation: string;
+
+  // @IsString()
+  // @IsNotEmpty()
+  // address: string;
 
   // Financier
   @IsNumber()

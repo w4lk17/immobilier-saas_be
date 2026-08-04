@@ -18,7 +18,7 @@ enum UserRole {
   OWNER
   TENANT
   MANAGER
-  ADMIN      // Admin d'une Organisation (Client)
+  ADMIN // Admin d'une Organisation (Client)
   SUPER_ADMIN // admin de la plateforme Hofeti
 }
 
@@ -38,12 +38,13 @@ enum EmploymentType {
 }
 
 enum PropertyType {
-  BUILDING
-  DUPLEX
   APARTMENT
-  VILLA
-  LOW_HOUSE
+  BUILDING
+  BUNGALOW
+  DUPLEX
+  HOUSE
   LAND
+  VILLA
   OTHER
 }
 
@@ -59,6 +60,7 @@ enum RentalType {
   STORE
   APARTMENT
   VILLA
+  SINGLE_ROOM
 }
 
 enum RentalStatus {
@@ -128,45 +130,45 @@ enum ExpenseStatus {
 // ==========================================
 
 model Plan {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique // "Basique", "Standard", "Pro", "Premium"
-  slug        String   @unique // "basic", "standard"...
-  price       Int      // Prix en FCFA
-  maxContracts Int     @default(5)
-  maxUsers    Int      @default(1)
+  id             Int     @id @default(autoincrement())
+  name           String  @unique // "Basique", "Standard", "Pro"
+  slug           String  @unique // "basic", "standard"...
+  price          Int // Prix en FCFA
+  maxContracts   Int     @default(5)
+  maxUsers       Int     @default(1)
   hasAutoInvoice Boolean @default(false)
-  hasSms      Boolean  @default(false)
-  
+  hasSms         Boolean @default(false)
+
   organizations Organization[]
 }
 
 model Organization {
-  id                Int       @id @default(autoincrement())
-  name              String    // Nom de l'agence ou du propriétaire
-  email             String    @unique
-  phone             String?   @unique
-  isEmailVerified   Boolean   @default(false)
-  emailVerifyToken  String?   @unique
-  isPhoneVerified   Boolean   @default(false)
-  phoneVerifyCode   String?
-  
+  id               Int     @id @default(autoincrement())
+  name             String // Nom de l'agence ou du propriétaire
+  email            String  @unique
+  phone            String? @unique
+  isEmailVerified  Boolean @default(false)
+  emailVerifyToken String? @unique
+  isPhoneVerified  Boolean @default(false)
+  phoneVerifyCode  String?
+
   // Abonnement
-  planId            Int
-  plan              Plan      @relation(fields: [planId], references: [id])
+  planId             Int
+  plan               Plan               @relation(fields: [planId], references: [id])
   subscriptionStatus SubscriptionStatus @default(TRIAL)
-  trialEndsAt       DateTime  @default(now()) 
+  trialEndsAt        DateTime           @default(now())
   subscriptionEndsAt DateTime?
-  
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  users             User[]
-  contracts         Contract[]
-  properties        Property[]
-  invoices          Invoice[]
-  expenses          Expense[]
-  notifications     Notification[]
+  users         User[]
+  contracts     Contract[]
+  properties    Property[]
+  invoices      Invoice[]
+  expenses      Expense[]
+  notifications Notification[]
 
   @@map("organizations")
 }
@@ -279,17 +281,27 @@ model Property {
   address       String
   description   String?        @db.Text
   type          PropertyType
-  propertyValue Float
+  propertyValue Float?
+  rentalUnits   Int @default(1)
   status        PropertyStatus @default(AVAILABLE)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+
+  isForSale    Boolean  @default(false)
+  nLot         Int?
+  lot          Int?
+  landTitle    String?
+  surface      Float?
+  name         String?
+  city         String?
+  neighborhood String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // --- NOUVEAU : Lien Organisation ---
   organizationId Int
   organization   Organization @relation(fields: [organizationId], references: [id])
   // -----------------------------------
 
-  owner   Owner     @relation(fields: [ownerId], references: [id])
+  owner   Owner    @relation(fields: [ownerId], references: [id])
   manager Manager? @relation("PropertyManager", fields: [managerId], references: [id])
 
   rentals   Rental[]
@@ -306,6 +318,8 @@ model Rental {
   type        RentalType
   status      RentalStatus @default(AVAILABLE)
   roomCount   Int          @default(1)
+  surface     Float
+  isFurnished Boolean      @default(false)
   rentalValue Float
   charges     Float        @default(0)
   createdAt   DateTime     @default(now())
@@ -319,51 +333,42 @@ model Rental {
 }
 
 model Contract {
-  id                 Int            @id @default(autoincrement())
-  
-  // --- NOUVEAU : Champs MVP pour bien ---
-  designation        String
-  address            String
+  id                 Int     @id @default(autoincrement())
+  ownerId            Int
+  propertyId         Int
+  rentalId           Int
+  tenantId           Int
+  managerId          Int?
   reference          String?
   // -------------------------------------
-  
   rentAmount         Float
-  chargesAmount      Float          @default(0) // AJOUTÉ
-  depositAmount      Float          @default(0)
-  advanceAmount      Float          @default(0) // Montant de l'Avance (Statique - référence initiale)
-  rentDeposit        Int            @default(1)
-  rentAdvance        Int            @default(0)
-  paymentStartAfter  Int            @default(0) // AJOUTÉ (était manquant)
-  dayAddToPaymentDay Int            @default(1) // AJOUTÉ
-  
-  startDate          DateTime
-  endDate            DateTime?
-  leaseType          LeaseType      @default(RESIDENTIAL_LEASE)
-  status             ContractStatus @default(PENDING)
-  pdfUrl             String?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  chargesAmount      Float   @default(0)
+  depositAmount      Float   @default(0)
+  advanceAmount      Float   @default(0)
+  rentDeposit        Int     @default(1)
+  rentAdvance        Int     @default(0)
+  paymentStartAfter  Int     @default(0)
+  dayAddToPaymentDay Int     @default(1)
 
-  // Relations
-  ownerId            Int
-  tenantId           Int // Lien vers la table Tenant
-  managerId          Int?
-  
+  startDate DateTime
+  endDate   DateTime?
+  leaseType LeaseType      @default(RESIDENTIAL_LEASE)
+  status    ContractStatus @default(PENDING)
+  pdfUrl    String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
   // --- NOUVEAU : Lien Organisation ---
-  organizationId     Int
-  organization       Organization @relation(fields: [organizationId], references: [id])
+  organizationId Int
+  organization   Organization @relation(fields: [organizationId], references: [id])
   // -----------------------------------
 
   owner    Owner     @relation(fields: [ownerId], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+  rental   Rental   @relation(fields: [rentalId], references: [id])
   tenant   Tenant    @relation(fields: [tenantId], references: [id])
   manager  Manager?  @relation("ContractManager", fields: [managerId], references: [id])
-  
-  // Optionnel pour MVP (on ne lie pas Property/Rental pour l'instant)
-  propertyId Int?
-  property   Property? @relation(fields: [propertyId], references: [id])
-  rentalId   Int?
-  rental     Rental?   @relation(fields: [rentalId], references: [id])
-  
+
   invoices Invoice[]
 
   @@unique([organizationId, reference])
@@ -385,11 +390,11 @@ model Invoice {
   status        InvoiceStatus @default(PENDING)
   dueDate       DateTime
   paidDate      DateTime?
+  organizationId Int
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   // --- NOUVEAU : Lien Organisation ---
-  organizationId Int
   organization   Organization @relation(fields: [organizationId], references: [id])
   // -----------------------------------
 
@@ -418,7 +423,7 @@ model PaymentTransaction {
 
 model Expense {
   id           Int           @id @default(autoincrement())
-  propertyId   Int?
+  propertyId   Int
   rentalId     Int?
   recordedById Int
   amount       Float
@@ -434,7 +439,7 @@ model Expense {
   organization   Organization @relation(fields: [organizationId], references: [id])
   // -----------------------------------
 
-  property   Property? @relation(fields: [propertyId], references: [id])
+  property   Property @relation(fields: [propertyId], references: [id])
   rental     Rental?   @relation(fields: [rentalId], references: [id])
   recordedBy User      @relation("UserExpenses", fields: [recordedById], references: [id])
 
@@ -446,16 +451,16 @@ model Expense {
 // ==========================================
 
 model Notification {
-  id               Int      @id @default(autoincrement())
-  organizationId   Int
-  userId           Int?
-  type             String   // "EMAIL", "SMS", "IN_APP"
-  title            String
-  message          String   @db.Text
-  isRead           Boolean  @default(false) 
-  status           String   @default("PENDING") // PENDING, SENT, FAILED
-  sentAt           DateTime?
-  createdAt        DateTime @default(now())
+  id             Int       @id @default(autoincrement())
+  organizationId Int
+  userId         Int?
+  type           String // "EMAIL", "SMS", "IN_APP"
+  title          String
+  message        String    @db.Text
+  isRead         Boolean   @default(false)
+  status         String    @default("PENDING") // PENDING, SENT, FAILED
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
 

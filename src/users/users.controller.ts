@@ -14,9 +14,9 @@ import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
-import { GetCurrentUser } from 'src/auth/decorators/get-current-user.decorator';
+import { GetCurrentUser } from '@/auth/decorators/get-current-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { UpdateStatusDto } from 'src/common/dto/update-status.dto';
+import { UpdateStatusDto } from '@/common/dto/update-status.dto';
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

@@ -1,5 +1,4 @@
-import { LeasePdfPayload } from "src/contracts/contracts.service";
-
+import { LeasePdfPayload } from "../../contracts/contracts.service";
 
 export interface PdfEngineInterface {
   generate(data: LeasePdfPayload): Promise<Buffer>;

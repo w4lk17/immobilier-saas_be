@@ -5,13 +5,14 @@ import {
   IsEnum,
   IsOptional,
   IsInt,
+  IsBoolean,
 } from 'class-validator';
 import { PropertyType, PropertyStatus } from '@prisma/client';
 
 export class CreatePropertyDto {
   @IsInt()
   @IsNotEmpty()
-  ownerId: number;
+  ownerId!: number;
 
   @IsInt()
   @IsOptional()
@@ -19,7 +20,7 @@ export class CreatePropertyDto {
 
   @IsString()
   @IsNotEmpty()
-  address: string;
+  address!: string;
 
   @IsString()
   @IsOptional()
@@ -27,13 +28,45 @@ export class CreatePropertyDto {
 
   @IsEnum(PropertyType)
   @IsNotEmpty()
-  type: PropertyType;
+  type!: PropertyType;
 
   @IsNumber()
-  @IsNotEmpty()
-  propertyValue: number;
+  @IsOptional()
+  propertyValue?: number;
 
   @IsEnum(PropertyStatus)
   @IsOptional()
   status?: PropertyStatus;
+
+  @IsBoolean()
+  @IsOptional()
+  isForSale?: boolean;
+
+  @IsNumber()
+  @IsOptional()
+  nLot?: number;
+
+  @IsNumber()
+  @IsOptional()
+  lot?: number;
+
+  @IsString()
+  @IsOptional()
+  landTitle?: string;
+
+  @IsNumber()
+  @IsOptional()
+  surface?: number;
+
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @IsString()
+  @IsOptional()
+  city?: string;
+
+  @IsString()
+  @IsOptional()
+  neighborhood?: string;
 }

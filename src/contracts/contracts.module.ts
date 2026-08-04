@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ContractsService } from './contracts.service';
 import { ContractsController } from './contracts.controller';
-import { PdfModule } from 'src/pdf/pdf.module';
-import { StorageModule } from 'src/storage/storage.module';
+import { StorageModule } from '../storage/storage.module';
+import { PdfModule } from '../pdf/pdf.module';
 
 @Module({
   imports: [

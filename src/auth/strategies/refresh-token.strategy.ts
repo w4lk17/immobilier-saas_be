@@ -35,7 +35,7 @@ export class RefreshTokenStrategy extends PassportStrategy(
       throw new UnauthorizedException('Refresh token missing');
     }
 
-    console.log('RefreshTokenStrategy: Validating payload:', payload);
+    // console.log('RefreshTokenStrategy: Validating payload:', payload);
     // Attach the refresh token to the payload for the guard/controller
     return {
       ...payload,

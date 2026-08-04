@@ -204,7 +204,11 @@ export class RentalsService {
         // On utilise SELECT pour tout définir (champs + relations)
         select: {
           id: true,
+          name:true,
           address: true,
+          description:true,
+          status:true,
+          type:true,
           // On met les relations DANS le select
           owner: {
             include: {
@@ -241,12 +245,12 @@ export class RentalsService {
   ): Promise<void> {
     if (user.role === UserRole.ADMIN) return;
 
-    // Check Employee
+    // Check Manager
     if (user.role === UserRole.MANAGER) {
-      const emp = await this.prisma.manager.findUnique({
+      const man = await this.prisma.manager.findUnique({
         where: { userId: user.sub },
       });
-      if (rental.property.managerId === emp?.id) return;
+      if (rental.property.managerId === man?.id) return;
     }
 
     // Check Owner

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core'; // For global guards
+import { ScheduleModule } from '@nestjs/schedule'; // <-- Ajout du ScheduleModule
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
@@ -25,6 +26,7 @@ import { RentalsModule } from './rentals/rentals.module';
       isGlobal: true, // Make config available globally
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(), // <-- Permet d'activer la gestion des cron jobs et tâches planifiées dans NestJS
     PrismaModule, // PrismaService available globally
     AuthModule, // Authentication
     UsersModule,

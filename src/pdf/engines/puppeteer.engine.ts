@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as puppeteer from 'puppeteer';
 import { PdfEngineInterface } from '../interfaces/pdf-engine.interface';
-import { LeasePdfPayload } from 'src/contracts/contracts.service';
 import { join } from 'path';
+import { LeasePdfPayload } from '../../contracts/contracts.service';
 
 @Injectable()
 export class PuppeteerEngine implements PdfEngineInterface {

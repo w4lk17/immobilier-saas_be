@@ -67,6 +67,7 @@ export class PropertiesService {
           organizationId: user.organizationId,
         },
         include: this.getPropertyIncludeRelations(),
+        orderBy: { createdAt: 'desc' },
       });
     }
 

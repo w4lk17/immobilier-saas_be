@@ -5,6 +5,7 @@ import {
   IsEnum,
   IsOptional,
   IsInt,
+  IsBoolean,
 } from 'class-validator';
 import { RentalType, RentalStatus } from '@prisma/client';
 
@@ -28,6 +29,12 @@ export class CreateRentalDto {
   @IsInt()
   @IsOptional()
   roomCount?: number;
+
+  @IsNumber()
+  surface: number;
+
+  @IsBoolean()
+  isFurnished?: boolean;
 
   @IsNumber()
   @IsNotEmpty()

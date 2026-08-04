@@ -26,9 +26,11 @@ export class DashboardService {
       totalProperties,
       totalContracts,
       activeContracts,
-      monthlyRevenue,
+      totalRevenue,
+      totalUnpaid,
       pendingInvoices,
       recentInvoices,
+      recentPayments,
       recentContracts,
     ] = await Promise.all([
       this.prisma.user.count({
@@ -45,20 +47,20 @@ export class DashboardService {
       this.prisma.contract.count({
         where: { organizationId, status: ContractStatus.ACTIVE },
       }),
-      this.sumInvoicePaidAmount({
-        organizationId,
-        paidDate: { gte: monthStart, lt: monthEnd },
-      }),
-      // this.sumInvoiceUnpaidAmount({
-      //   organizationId,
-      //   paidDate: { gte: monthStart, lt: monthEnd },
-      // }),
+      this.sumInvoicePaidAmount({ organizationId }),
+      this.sumInvoiceUnpaidAmount({ organizationId }),
       this.prisma.invoice.count({
         where: {
           organizationId,
           type: InvoiceType.RENT,
           status: { in: [InvoiceStatus.PENDING, InvoiceStatus.PARTIAL, InvoiceStatus.OVERDUE] },
         },
+      }),
+      this.findRecentInvoices({
+        organizationId,
+        type: InvoiceType.RENT,
+        status: { in: [InvoiceStatus.PAID, InvoiceStatus.PARTIAL] },
+
       }),
       this.findRecentInvoices({ organizationId, type: InvoiceType.RENT }),
       this.findRecentContracts({ organizationId }),
@@ -71,9 +73,11 @@ export class DashboardService {
       totalProperties,
       totalContracts,
       activeContracts,
-      monthlyRevenue,
+      totalRevenue,
+      totalUnpaid,
       pendingInvoices,
       recentInvoices,
+      recentPayments,
       recentActivity: this.buildRecentActivity(recentInvoices, recentContracts),
     };
   }
@@ -128,10 +132,7 @@ export class DashboardService {
         distinct: ['tenantId'],
         select: { tenantId: true },
       }),
-      this.sumInvoicePaidAmount({
-        ...invoiceWhere,
-        paidDate: { gte: monthStart, lt: monthEnd },
-      }),
+      this.sumInvoicePaidAmount({ ...invoiceWhere }, { gte: monthStart, lt: monthEnd }), // revenu du mois
       this.sumExpenseAmount({
         organizationId,
         property: { managerId: manager.id },
@@ -298,8 +299,7 @@ export class DashboardService {
 
     return {
       monthlyRent: activeContract
-        // ? activeContract.rentAmount + activeContract.chargesAmount
-        ? activeContract.rentAmount
+        ? activeContract.rentAmount //|| activeContract.rental?.rentalValue
         : 0,
       currentMonthRentDue: activeContract
         ? activeContract.rentAmount + activeContract.chargesAmount
@@ -311,8 +311,11 @@ export class DashboardService {
       activeContract,
       currentHousing: activeContract
         ? {
-          title: activeContract.designation,
-          address: activeContract.address,
+          title: activeContract.rental?.name,
+          address: activeContract.property?.address,
+          surface: activeContract.rental?.surface,
+          roomCount: activeContract.rental?.roomCount,
+          floor: 0,
           owner: {
             name: `${activeContract.owner.user.civility} ${activeContract.owner.user.lastName} ${activeContract.owner.user.firstName}`,
             phone: activeContract.owner.user.phoneNumber,
@@ -333,12 +336,39 @@ export class DashboardService {
     };
   }
 
-  private async sumInvoicePaidAmount(where: any): Promise<number> {
+  // date range pour si vouloir filtrer par periode
+  private async sumInvoicePaidAmount(
+    where: any,
+    dateRange?: { gte: Date; lt: Date },
+  ): Promise<number> {
     const result = await this.prisma.invoice.aggregate({
-      where: { ...where, type: InvoiceType.RENT },
+      where: {
+        ...where,
+        type: InvoiceType.RENT,
+        ...(dateRange ? { paidDate: dateRange } : {}),
+      },
       _sum: { paidAmount: true },
     });
     return result._sum.paidAmount ?? 0;
+  }
+
+  private async sumInvoiceUnpaidAmount(where: any): Promise<number> {
+    const result = await this.prisma.invoice.aggregate({
+      where: {
+        ...where, type: InvoiceType.RENT,
+        status: {
+          in: [InvoiceStatus.PENDING, InvoiceStatus.PARTIAL, InvoiceStatus.OVERDUE],
+        },
+      },
+      _sum: {
+        amountDue: true,
+        paidAmount: true,
+      },
+    });
+
+    const totalDue = result._sum.amountDue ?? 0;
+    const totalPaid = result._sum.paidAmount ?? 0;
+    return totalDue - totalPaid;
   }
 
   private async sumExpenseAmount(where: any): Promise<number> {

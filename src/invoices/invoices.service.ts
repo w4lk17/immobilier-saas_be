@@ -4,11 +4,13 @@ import {
   ForbiddenException,
   ConflictException,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
-import { Invoice, UserRole } from '@prisma/client';
+import { Invoice, InvoiceStatus, InvoiceType, UserRole } from '@prisma/client';
 import { RequestUser } from '../auth/types';
 
 function makeInvoiceNumber(prefix = 'INV'): string {
@@ -212,7 +214,7 @@ export class InvoicesService {
       });
     } catch (error) {
       console.error('Error updating invoice:', error);
-      if (error.code === 'P2025') {
+      if ((error as any).code === 'P2025') {
         throw new NotFoundException(`Invoice with ID "${id}" not found.`);
       }
       throw new InternalServerErrorException('Could not update invoice.');
@@ -253,10 +255,210 @@ export class InvoicesService {
       return await this.prisma.invoice.delete({ where: { id } });
     } catch (error) {
       console.error('Error removing invoice:', error);
-      if (error.code === 'P2025') {
+      if ((error as any).code === 'P2025') {
         throw new NotFoundException(`Invoice with ID "${id}" not found.`);
       }
       throw new InternalServerErrorException(`Could not delete invoice.`);
     }
   }
+
+
+  /**
+   * Cron job interne (NestJS Schedule) pour mettre à jour le statut des factures en OVERDUE
+   * si la dueDate < aujourd'hui et que la facture n'est pas soldée.
+   * Déclenché tous les jours à 00:01.
+   * 
+   * // TODO: Factoriser la stratégie pour pouvoir passer à un scheduler "pluggable" 
+   *         (interne ou externe) selon la configuration/deploiement.
+   */
+  @Cron('1 0 * * *') // Minuit 01 chaque jour
+  async markOverdueInvoices() {
+    const today = new Date();
+    try {
+      // Met à jour tous les invoices non soldés, dont la date est passée, en OVERDUE
+      const { count } = await this.prisma.invoice.updateMany({
+        where: {
+          dueDate: { lt: today },
+          status: { in: ['PENDING', 'PARTIAL'] }, // Seulement ceux qui ne sont pas déjà payés ou overdue
+        },
+        data: {
+          status: 'OVERDUE',
+          updatedAt: new Date(),
+        },
+      });
+      // TODO: notifier l'admin (organisation) et ajouter une alerte dashboard
+      if (count > 0) {
+        Logger.log(`[CRON] ${count} facture(s) passée(s) en statut "OVERDUE".`);
+        console.log(`[CRON] ${count} facture(s) passée(s) en statut "OVERDUE".`);
+        // TODO: Envoyer un email à l'administrateur concerné (organizationAdmin) 
+        // et, si pertinent, au propriétaire individuel du bien lié à chaque facture.
+        // TODO: Créer ou incrémenter une alerte/badge visible sur le dashboard de l'admin.
+      }
+      return count;
+    } catch (error) {
+      console.error('[CRON] Erreur lors de la mise à jour des factures OVERDUE:', error);
+      throw new InternalServerErrorException('Erreur lors du cron de mise à jour des factures OVERDUE.');
+    }
+  }
+
+  /**
+   * Cron job interne pour générer les factures mensuelles le 1er de chaque mois à 00h01.
+   * Pour chaque contrat actif sur le mois précédent, génère une facture si inexistante
+   * ET uniquement si la période d'avance est écoulée (pas de facturation anticipée).
+   * 
+   * Exemple : le 1er Mai, génère la facture d'Avril.
+   *
+   * La logique suivante permet de :
+   *  - Calculer pour chaque contrat la date réelle du début de paiement (startDate + advance)
+   *  - NE générer la facture que si le mois précédent >= mois de début de paiement réel
+   */
+  @Cron('1 0 1 * *') // Tous les 1ers du mois à 00:01
+  async generateMonthlyInvoices() {
+    const today = new Date();
+
+    // On émet la facture pour le MOIS PRÉCÉDENT à chaque début de mois
+    const targetYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+    const targetMonth = today.getMonth() === 0 ? 12 : today.getMonth(); // 1-12 (1 = janvier,...)
+
+    // Début et fin de la période du mois à facturer (ex: le 1 Mai => 1-30 Avril)
+    const startOfPrevMonth = new Date(targetYear, targetMonth - 1, 1, 0, 0, 0, 0);
+    const endOfPrevMonth = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+
+    try {
+      // 1. Récupère tous les contrats potentiellement concernés (actifs durant la période visée)
+      const activeContracts = await this.prisma.contract.findMany({
+        where: {
+          startDate: { lte: endOfPrevMonth },
+          OR: [
+            { endDate: null },
+            { endDate: { gte: startOfPrevMonth } },
+          ],
+          status: 'ACTIVE'
+        },
+        include: {
+          tenant: true,
+          property: true,
+        },
+      });
+
+      let createdCount = 0;
+
+      // 2. Boucle sur chaque contrat pour décider s'il doit être facturé
+      for (const contract of activeContracts) {
+        /**
+         * Calcul de la première date à partir de laquelle on DOIT générer une facture (écoulement de l'avance) :
+         * - Si contract.rentAdvance existant (>0), on décale le startDate d'autant de mois.
+         * - Sinon, pas d'avance, la facturation commence au startDate.
+         * 
+         * Hypothèse: rentAdvance en mois (adapter si stocké différemment).
+         */
+        const advancePeriod = contract.rentAdvance || 0; // ex: 2 -> 2 mois d'avance payés
+        const paymentStartDate = new Date(contract.startDate);
+        paymentStartDate.setMonth(paymentStartDate.getMonth() + advancePeriod);
+
+        // Pour le mois de facturation (mois précédent): doit être >= au premier mois payable
+        // On compare YYYY-MM (mois à facturer >= mois paiement réel)
+        if (
+          endOfPrevMonth.getFullYear() < paymentStartDate.getFullYear() ||
+          (endOfPrevMonth.getFullYear() === paymentStartDate.getFullYear() &&
+            endOfPrevMonth.getMonth() < paymentStartDate.getMonth())
+        ) {
+          // Pas encore arrivé à la période payable -> ne rien générer pour ce contrat ce mois-ci
+          // (On saute à la prochaine itération)
+          continue;
+        }
+
+        // 3. Vérifie qu'une facture RENT n'existe pas déjà pour le contrat et la période courante (mois de paiement = mois en cours)
+        // (On vérifie sur le mois courant car la dueDate de la facture à créer sera ce mois-ci - cf. logique existante)
+        const startOfDueDateMonth = new Date(today.getFullYear(), today.getMonth(), 1, 0, 0, 0, 0);
+        const endOfDueDateMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        const existingInvoice = await this.prisma.invoice.findFirst({
+          where: {
+            contractId: contract.id,
+            type: InvoiceType.RENT,
+            dueDate: {
+              gte: startOfDueDateMonth,
+              lte: endOfDueDateMonth,
+            },
+          },
+        });
+
+        if (existingInvoice) {
+          // Une facture existe déjà pour ce mois -> skip (aucune création en double)
+          continue;
+        }
+
+        // 4. Génère la facture pour le loyer du mois précédent
+        await this.prisma.invoice.create({
+          data: {
+            invoiceNumber: makeInvoiceNumber('RENT'),
+            contractId: contract.id,
+            tenantId: contract.tenantId,
+            amountDue: contract.rentAmount + (contract.chargesAmount || 0),
+            paidAmount: 0,
+            type: InvoiceType.RENT,
+            status: InvoiceStatus.PENDING,
+            // Echance de paiement : typiquement le 5 du mois, sauf si overridé par dayAddToPaymentDay
+            dueDate: new Date(today.getFullYear(), today.getMonth(), contract.dayAddToPaymentDay || 5),
+            organizationId: contract.organizationId,
+          },
+        });
+        createdCount += 1;
+      }
+
+      if (createdCount > 0) {
+        Logger.log(`[CRON] ${createdCount} facture(s) mensuelle(s) générée(s) pour le mois précédent.`);
+        console.log(`[CRON] ${createdCount} facture(s) mensuelle(s) générée(s) pour le mois précédent.`);
+      }
+      return createdCount;
+    } catch (error) {
+      console.error('[CRON] Erreur lors de la génération des factures mensuelles:', error);
+      throw new InternalServerErrorException('Erreur lors de la génération mensuelle des factures.');
+    }
+  }
 }
+
+/**
+ * 
+ * Plan de modification/correction
+
+
+Historiser la date de la dernière génération réussie.
+Au prochain lancement, générer les factures manquantes pour tous les mois non couverts depuis cette date.
+Option : Ajouter déclenchement manuel par un endpoint sécurisé ou script CLI.
+Flexibilité pour contrats atypiques
+
+Supporter les contrats à fréquence non mensuelle (hebdomadaire, trimestrielle…).
+Paramétrer la fréquence de génération par contrat.
+Traitement des modifications de contrat
+
+Vérifier les modifications éventuelles sur le montant/conditions du contrat avant génération de facture.
+Ne pas dupliquer/générer si un changement rétroactif intervient.
+Notifications et suivi
+
+Ajouter l’envoi de notifications/alertes en cas d’échec ou d’incohérence.
+Logger chaque opération de génération pour permettre un audit.
+Optimisation
+
+Regrouper/lister les contrats éligibles avant loop/traitement.
+Minimiser le nombre de requêtes SQL.
+Tests & validation
+
+Ajouter des tests unitaires/cas pratiques pour tous les scénarios (avance, cron manqué, modification, fréquence…).
+
+
+model InvoiceGenerationHistory {
+  id             Int      @id @default(autoincrement())
+  organizationId Int
+  periodStart    DateTime
+  periodEnd      DateTime
+  status         String   // SUCCESS, FAILED
+  details        String?  // log, erreur éventuelle
+  generatedAt    DateTime @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  @@map("invoice_generation_history")
+}
+
+
+*/
