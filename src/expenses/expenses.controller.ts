@@ -14,7 +14,7 @@ import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 
 @Controller('expenses')
 export class ExpensesController {
@@ -24,14 +24,14 @@ export class ExpensesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER) // Seuls Admin et Employee peuvent créer
   create(
     @Body() createExpenseDto: CreateExpenseDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.expensesService.create(createExpenseDto, user);
   }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OWNER) // Tous peuvent lister (filtré par le service)
-  findAll(@GetCurrentUser() user: JwtPayload) {
+  findAll(@GetCurrentUser() user: RequestUser) {
     return this.expensesService.findAll(user);
   }
 
@@ -41,7 +41,7 @@ export class ExpensesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OWNER)
   findAllByProperty(
     @Param('propertyId', ParseIntPipe) propertyId: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.expensesService.findAllByProperty(propertyId, user);
   }
@@ -50,7 +50,7 @@ export class ExpensesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OWNER)
   findAllByRental(
     @Param('rentalId', ParseIntPipe) rentalId: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.expensesService.findAllByRental(rentalId, user);
   }
@@ -61,7 +61,7 @@ export class ExpensesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OWNER)
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.expensesService.findOne(id, user);
   }
@@ -71,7 +71,7 @@ export class ExpensesController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateExpenseDto: UpdateExpenseDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.expensesService.update(id, updateExpenseDto, user);
   }
@@ -80,7 +80,7 @@ export class ExpensesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER) // Owner ne peut pas supprimer
   remove(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.expensesService.remove(id, user);
   }

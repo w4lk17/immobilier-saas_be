@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core'; // For global guards
+import { ScheduleModule } from '@nestjs/schedule'; // <-- Ajout du ScheduleModule
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
@@ -12,6 +13,7 @@ import { ContractsModule } from './contracts/contracts.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { BillingModule } from './billing/billing.module';
 import { ExpensesModule } from './expenses/expenses.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { AppController } from './app.controller';
@@ -24,6 +26,7 @@ import { RentalsModule } from './rentals/rentals.module';
       isGlobal: true, // Make config available globally
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(), // <-- Permet d'activer la gestion des cron jobs et tâches planifiées dans NestJS
     PrismaModule, // PrismaService available globally
     AuthModule, // Authentication
     UsersModule,
@@ -36,6 +39,7 @@ import { RentalsModule } from './rentals/rentals.module';
     InvoicesModule,
     BillingModule,
     ExpensesModule,
+    DashboardModule,
   ],
   controllers: [AppController], // AppController can be removed if not used
   providers: [

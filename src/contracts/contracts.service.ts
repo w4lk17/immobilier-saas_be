@@ -8,15 +8,40 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateContractDto } from './dto/create-contract.dto';
 import { UpdateContractDto } from './dto/update-contract.dto';
-import {
-  Contract,
-  ContractStatus,
-  InvoiceType,
-  PropertyStatus,
-  RentalStatus,
-  UserRole,
-} from '@prisma/client';
-import { JwtPayload } from '../auth/types';
+import { ContractStatus, InvoiceStatus, InvoiceType, Prisma, RentalStatus, RentalType, UserRole } from '@prisma/client';
+import { PdfService } from '../pdf/pdf.service';
+import { StorageService } from '../storage/storage.service';
+import { RequestUser } from '../auth/types';
+
+export interface LeasePdfPayload {
+  // Infos du contrat
+  reference: string;
+  designation: string;
+  address: string;
+  rentAmount: number;
+  chargesAmount: number;
+  depositAmount: number;
+  startDate: string; // Format lisible ex: "01 mars 2024"
+  endDate?: string;
+
+  // Infos Propriétaire (Bailleur)
+  ownerFullName: string;
+  ownerAddress?: string;
+  ownerProfession?: string;
+  ownerPhoneNumber: string;
+
+
+  // Infos Locataire
+  // tenantTest: User;
+  tenantFullName: string;
+  tenantAddress?: string;
+  tenantBirthDate?: string;
+  tenantProfession?: string;
+  tenantPhoneNumber: string;
+
+  // ... ajoute ici tout ce que ton futur modèle de bail nécessitera
+}
+
 
 function makeInvoiceNumber(prefix = 'INV'): string {
   const ymd = new Date().toISOString().slice(0, 10).replaceAll('-', '');
@@ -51,674 +76,344 @@ function computeFirstRentDueDate(
 
 @Injectable()
 export class ContractsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService,
+    private pdfService: PdfService,
+    private storageService: StorageService
+  ) { }
 
-  async create(
-    createContractDto: CreateContractDto,
-    user: JwtPayload,
-  ): Promise<Contract> {
-    // RBAC Check: Only ADMIN and MANAGER can create contracts
-    if (user.role !== UserRole.ADMIN && user.role !== UserRole.MANAGER) {
-      throw new ForbiddenException(
-        'Only administrators and property managers can create contracts.',
-      );
+  async create(adminId: number,
+    dto: CreateContractDto
+  ) {
+    // 1. Récupération Admin & Org
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+      include: { organization: true, ownerProfile: true },
+    });
+    if (!admin?.organization) throw new ForbiddenException('Pas d\'organisation');
+
+    // 2. Validation Locataire
+    const tenantUser = await this.prisma.user.findUnique({
+      where: { id: dto.tenantId },
+      include: { tenantProfile: true },
+    });
+
+    if (!tenantUser || tenantUser.organizationId !== admin.organizationId) {
+      throw new NotFoundException('Locataire introuvable ou hors organisation');
     }
 
-    // 1. Validate Existence of Related Entities
-    //Validate Owner exists
-    const owner = await this.prisma.owner.findUnique({
-      where: { id: createContractDto.ownerId },
-    });
-    if (!owner)
-      throw new NotFoundException(
-        `Owner with ID ${createContractDto.ownerId} not found.`,
-      );
-    // Validate Property exists and belongs to the owner
-    const property = await this.prisma.property.findUnique({
-      where: { id: createContractDto.propertyId },
-      include: { owner: true },
-    });
-    if (!property)
-      throw new NotFoundException(
-        `Property with ID ${createContractDto.propertyId} not found.`,
-      );
-
-    // Ensure property belongs to the specified owner
-    if (property.ownerId !== createContractDto.ownerId) {
-      throw new ConflictException(
-        `Property ${createContractDto.propertyId} does not belong to owner ${createContractDto.ownerId}.`,
-      );
+    if (!tenantUser.tenantProfile) {
+      throw new NotFoundException('Profil locataire introuvable pour cet utilisateur');
     }
 
-    // Validate Rental exists and belongs to the property
+    const tenantProfileId = tenantUser.tenantProfile.id;
+
+    // 4. Vérifier la disponibilité du rental       
     const rental = await this.prisma.rental.findUnique({
-      where: { id: createContractDto.rentalId },
-      include: { property: true },
+      where: { id: dto.rentalId },
     });
-    if (!rental)
-      throw new NotFoundException(
-        `Rental with ID ${createContractDto.rentalId} not found.`,
-      );
 
-    // Ensure rental belongs to the specified property
-    if (rental.propertyId !== createContractDto.propertyId) {
-      throw new ConflictException(
-        `Rental ${createContractDto.rentalId} does not belong to property ${createContractDto.propertyId}.`,
-      );
+    if (!rental) {
+      throw new NotFoundException('Unité locative introuvable');
     }
 
-    // For MANAGER role, ensure they are assigned to manage this rental's property
-    if (user.role === UserRole.MANAGER) {
-      const managerProfile = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
-      });
-
-      if (!managerProfile || rental.property.managerId !== managerProfile.id) {
-        throw new ForbiddenException(
-          `You are not authorized to manage contracts for this rental.`,
-        );
-      }
+    // 3. Gestion du Profil Owner (Créateur = Propriétaire bailleur)
+    let ownerProfile = admin.ownerProfile;
+    if (!ownerProfile) {
+      ownerProfile = await this.prisma.owner.create({ data: { userId: adminId } });
     }
 
-    // Check if rental is available
-    if (rental.status !== RentalStatus.AVAILABLE) {
-      throw new ConflictException(
-        `Rental with ID ${createContractDto.rentalId} is not currently available (${rental.status}).`,
-      );
-    }
-
-    // Validate Tenant exists
-    const tenant = await this.prisma.tenant.findUnique({
-      where: { id: createContractDto.tenantId },
-    });
-    if (!tenant)
-      throw new NotFoundException(
-        `Tenant with ID ${createContractDto.tenantId} not found.`,
-      );
-
-    // Validate Manager exists
-    const manager = await this.prisma.manager.findUnique({
-      where: { id: createContractDto.managerId },
-    });
-    if (!manager)
-      throw new NotFoundException(
-        `Manager with ID ${createContractDto.managerId} not found.`,
-      );
-
-    // 2. Business Logic Validation
-    // Check if tenant already has an active contract for this rental
+    // 5.  Vérifie si le locataire a déjà un contrat actif pour cette location
     const existingContract = await this.prisma.contract.findFirst({
       where: {
-        rentalId: createContractDto.rentalId,
-        tenantId: createContractDto.tenantId,
+        tenantId: tenantProfileId,
+        rentalId: dto.rentalId,
         status: { in: ['PENDING', 'ACTIVE'] },
       },
     });
 
     if (existingContract) {
-      throw new ConflictException(
-        `Tenant already has an active contract for this rental.`,
-      );
+      throw new ConflictException(`Le locataire possède déjà un contrat actif pour cette location.`);
+    }
+
+    if (rental.status !== RentalStatus.AVAILABLE) {
+      throw new ConflictException("Cette unité locative n'est pas disponible.");
     }
 
     try {
-      const contractWithInvoices = await this.prisma.$transaction(
-        async (tx) => {
-          const created = await tx.contract.create({
-            data: createContractDto,
-          });
+      // On lance la transaction
+      const contract = await this.prisma.$transaction(async (tx) => {
 
-          // Update rental status to OCCUPIED
-          await tx.rental.update({
-            where: { id: createContractDto.rentalId },
-            data: { status: RentalStatus.OCCUPIED },
-          });
+        // -- GÉNÉRATION DE LA RÉFÉRENCE ---
+        const reference = await this.generateContractReference(tx, admin.organizationId);
 
-          // Create initial invoices:
-          // - Deposit invoice due at start date
-          // - First rent invoice due after paymentStartAfter logic
-          const startDate = new Date(createContractDto.startDate);
-          const depositDueDate = startDate;
-          const firstRentDueDate = computeFirstRentDueDate(
-            startDate,
-            createContractDto.paymentStartAfter,
-            createContractDto.dayAddToPaymentDay,
-          );
+        // --- 1. CALCULS ---
+        const rentDepositMonths = dto.rentDeposit || 0;
+        const rentAdvanceMonths = dto.rentAdvance || 0;
 
-          await tx.invoice.createMany({
-            data: [
-              {
-                invoiceNumber: makeInvoiceNumber('DEP'),
-                contractId: created.id,
-                tenantId: created.tenantId,
-                amountDue: created.depositAmount,
-                paidAmount: 0,
-                type: InvoiceType.DEPOSIT,
-                dueDate: depositDueDate,
-              },
-              {
-                invoiceNumber: makeInvoiceNumber('RENT'),
-                contractId: created.id,
-                tenantId: created.tenantId,
-                amountDue: created.rentAmount + rental.charges,
-                paidAmount: 0,
-                type: InvoiceType.RENT,
-                dueDate: firstRentDueDate,
-              },
-            ],
-          });
+        // Montants
+        const totalDepositAmount = dto.rentAmount * rentDepositMonths;
+        const totalAdvanceAmount = dto.rentAmount * rentAdvanceMonths; // Pas de charges sur l'avance (ta règle)
 
-          return tx.contract.findUnique({
-            where: { id: created.id },
-            include: {
-              owner: {
-                include: {
-                  user: {
-                    select: {
-                      id: true,
-                      firstName: true,
-                      lastName: true,
-                      email: true,
-                    },
-                  },
-                },
-              },
-              property: {
-                include: {
-                  owner: {
-                    include: {
-                      user: {
-                        select: {
-                          id: true,
-                          firstName: true,
-                          lastName: true,
-                          email: true,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-              rental: {
-                include: {
-                  property: {
-                    include: {
-                      owner: {
-                        include: {
-                          user: {
-                            select: {
-                              id: true,
-                              firstName: true,
-                              lastName: true,
-                              email: true,
-                            },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-              tenant: {
-                include: {
-                  user: {
-                    select: {
-                      id: true,
-                      firstName: true,
-                      lastName: true,
-                      email: true,
-                    },
-                  },
-                },
-              },
-              manager: {
-                include: {
-                  user: {
-                    select: {
-                      id: true,
-                      firstName: true,
-                      lastName: true,
-                      email: true,
-                    },
-                  },
-                },
-              },
-              invoices: {
-                orderBy: { dueDate: 'desc' },
-                include: { transactions: true },
-              },
-              _count: {
-                select: { invoices: true },
-              },
+        // A. Création du Contrat
+        const createdContract = await tx.contract.create({
+          data: {
+            propertyId: dto.propertyId,
+            rentalId: dto.rentalId,
+            ownerId: dto.ownerId,
+            tenantId: tenantProfileId,
+            reference: reference,
+            rentDeposit: dto.rentDeposit || 0,
+            rentAdvance: dto.rentAdvance || 0,
+            rentAmount: dto.rentAmount,
+            chargesAmount: dto.chargesAmount || 0,
+            depositAmount: totalDepositAmount || 0, // dto.depositAmount || 0, //totalDepositAmount
+            advanceAmount: totalAdvanceAmount || 0, //dto.advanceAmount || 0, //totalAdvanceAmount
+            startDate: new Date(dto.startDate),
+            endDate: dto.endDate ? new Date(dto.endDate) : null,
+            paymentStartAfter: dto.paymentStartAfter || 0,
+            dayAddToPaymentDay: dto.dayAddToPaymentDay || 1,
+            status: ContractStatus.ACTIVE,
+            leaseType: dto.leaseType,
+            organizationId: admin.organizationId,
+
+          },
+        });
+
+        // --- 2. CRÉATION DES FACTURES "CAPITALES" ---
+
+        // A. Facture de CAUTION (Dépôt de garantie)
+        if (totalDepositAmount > 0) {
+          await tx.invoice.create({
+            data: {
+              invoiceNumber: makeInvoiceNumber('DEP'),
+              contractId: createdContract.id,
+              tenantId: tenantProfileId,
+              organizationId: admin.organizationId,
+              amountDue: totalDepositAmount,
+              paidAmount: totalDepositAmount, // payer à la signature
+              type: InvoiceType.DEPOSIT,
+              status: InvoiceStatus.PAID,
+              dueDate: createdContract.startDate,
+              paidDate: createdContract.startDate
             },
           });
-        },
-      );
+        }
 
-      if (!contractWithInvoices) {
-        throw new InternalServerErrorException('Could not create contract.');
-      }
+        // B. Facture d'AVANCE (Porte-monnaie / Crédit)
+        // Cette facture représente l'argent que le locataire a "posé" sur la table.
+        // On considère qu'il a payé cette somme à la signature.
+        if (totalAdvanceAmount > 0) {
+          await tx.invoice.create({
+            data: {
+              invoiceNumber: makeInvoiceNumber('ADV'),
+              contractId: createdContract.id,
+              tenantId: tenantProfileId,
+              organizationId: admin.organizationId,
+              amountDue: totalAdvanceAmount,
+              paidAmount: totalAdvanceAmount,
+              type: InvoiceType.ADVANCE,
+              status: InvoiceStatus.PAID,
+              dueDate: createdContract.startDate,
+              paidDate: createdContract.startDate,
+            },
+          });
+        }
 
-      return contractWithInvoices;
+        // --- 3. CRÉATION DE LA PREMIÈRE FACTURE DE LOYER ---
+        // Logique : On attend 'paymentStartAfter' mois.
+
+        // Si paymentStartAfter n'est pas fourni, on le déduit de l'avance (logique par défaut)
+        const startAfter = dto.paymentStartAfter ?? rentAdvanceMonths;
+
+        // Calcul de la date de la première facture
+        let firstRentDueDate: Date;
+
+        if (startAfter > 0) {
+          // Si on saute des mois (ex: avance de 2 mois)
+          // La première facture est due dans 'startAfter' mois
+          firstRentDueDate = addMonths(createdContract.startDate, startAfter);
+        } else {
+          // Si pas de saut, c'est le mois prochain (ou ce mois si logique immédiate)
+          // Ici, on considère que c'est le mois prochain pour le premier loyer "normal"
+          firstRentDueDate = addMonths(createdContract.startDate, 1);
+        }
+
+        // Ajustement au jour de echeance (ex: le 5 du mois)
+        const paymentDay = dto.dayAddToPaymentDay || 5;
+        firstRentDueDate = setDayOfMonth(firstRentDueDate, paymentDay);
+
+        // Création de la facture de Loyer
+        await tx.invoice.create({
+          data: {
+            invoiceNumber: makeInvoiceNumber('RENT'),
+            contractId: createdContract.id,
+            tenantId: tenantProfileId,
+            organizationId: admin.organizationId,
+            amountDue: dto.rentAmount + (dto.chargesAmount || 0),
+            paidAmount: 0,
+            type: InvoiceType.RENT,
+            status: InvoiceStatus.PENDING,
+            dueDate: firstRentDueDate,
+          },
+        });
+
+        // ==========================================
+        // D. PRÉPARATION DES DONNÉES POUR LE PDF
+        // ==========================================
+        // const pdfData: LeasePdfPayload = {
+        //   reference: reference,
+        //   designation: dto.designation,
+        //   address: dto.address,
+        //   rentAmount: dto.rentAmount,
+        //   chargesAmount: dto.chargesAmount || 0,
+        //   depositAmount: dto.depositAmount || 0,
+        //   startDate: new Date(dto.startDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }),
+        //   endDate: dto.endDate ? new Date(dto.endDate).toISOString() : undefined,
+
+        //   // On utilise les données récupérées en début de fonction !
+        //   ownerFullName: `${admin.lastName} ${admin.firstName}`,
+        //   ownerAddress: admin.address || undefined,
+        //   ownerProfession: admin.occupation || undefined,
+        //   ownerPhoneNumber: admin.phoneNumber || "",
+
+        //   // tenantTest: tenantUser,
+        //   tenantFullName: `${tenantUser.lastName} ${tenantUser.firstName}`,
+        //   tenantBirthDate: tenantUser.dateOfBirth ? tenantUser.dateOfBirth.toLocaleDateString('fr-FR') : undefined,
+        //   tenantAddress: tenantUser.address || undefined,
+        //   tenantProfession: tenantUser.occupation || undefined,
+        //   tenantPhoneNumber: tenantUser.phoneNumber || "",
+        // };
+
+        // ==========================================
+        // E. GÉNÉRATION DU FICHIER PDF (En mémoire)
+        // ==========================================
+        // Le service PdfService prendra les données et retournera un Buffer (le fichier binaire)
+        // const pdfBuffer = await this.pdfService.generateLeasePdf(pdfData);
+
+        // ==========================================
+        // F. SAUVEGARDE DU FICHIER (Stockage)
+        // ==========================================
+        // On définit le chemin de stockage, ex: "contracts/BAIL-2024-0001.pdf"
+        // const storagePath = `contracts/${reference}.pdf`;
+        // Le service StorageService upload le Buffer et retourne l'URL publique/privée
+        // const pdfUrl = await this.storageService.uploadFile(pdfBuffer, storagePath);
+
+
+
+
+        // --- 4. MISE À JOUR DU CONTRAT ---
+        // On sauvegarde les montants de référence
+        await tx.contract.update({
+          where: { id: createdContract.id },
+          data: {
+            depositAmount: totalDepositAmount,
+            advanceAmount: totalAdvanceAmount, // On sauvegarde l'avance initiale
+            // pdfUrl: pdfUrl, // mise a jour du contrat avec l' URL du pdf
+          },
+        });
+
+
+        // --- 4. MISE À JOUR DU STATUS DU LOCAL ---
+        // On change le local en OCCUPE
+        await tx.rental.update({
+          where: { id: dto.rentalId },
+          data: { status: RentalStatus.OCCUPIED }
+        });
+
+
+        return createdContract;
+
+      }, {
+        timeout: 30000 // Augmente le délai à 30 secondes (30000 ms) au lieu de 5000 ms
+      });
+
+      return this.findOneForOrganization(contract.id, admin.organizationId);
     } catch (error) {
-      console.error('Error creating contract:', error);
-      throw new InternalServerErrorException('Could not create contract.');
+      console.error(error);
+      throw new InternalServerErrorException("Erreur création contrat");
     }
   }
 
-  async findAll(user?: JwtPayload): Promise<Contract[]> {
-    if (user) {
-      return this.findAllFiltered(user);
-    }
-
-    // Public access - return all contracts
-    return this.prisma.contract.findMany({
-      include: {
-        owner: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
-        property: true,
-        rental: {
-          include: {
-            property: true,
-          },
-        },
-        tenant: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
-        manager: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
-        invoices: true,
-        _count: {
-          select: { invoices: true },
-        },
-      },
-    });
-  }
-
-  private async findAllFiltered(user: JwtPayload): Promise<Contract[]> {
-    const ownerProfile =
-      user.role === UserRole.OWNER
-        ? await this.prisma.owner.findUnique({ where: { userId: user.sub } })
-        : null;
-    const managerProfile =
-      user.role === UserRole.MANAGER
-        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
-        : null;
-    const tenantProfile =
-      user.role === UserRole.TENANT
-        ? await this.prisma.tenant.findUnique({ where: { userId: user.sub } })
-        : null;
-
-    const whereClause: any = {};
-
-    if (user.role === UserRole.OWNER && ownerProfile) {
-      // Owners see contracts for their properties
-      whereClause.ownerId = ownerProfile.id;
-    } else if (user.role === UserRole.MANAGER && managerProfile) {
-      // Managers see contracts for properties they manage
-      whereClause.property = { managerId: managerProfile.id };
-    } else if (user.role === UserRole.TENANT && tenantProfile) {
-      // Tenants see only their own contracts
-      whereClause.tenantId = tenantProfile.id;
-    }
-    // ADMIN sees all
+  async findAll(user: RequestUser) {
+    const accessWhere = await this.buildAccessWhere(user);
+    if (!accessWhere) return [];
 
     return this.prisma.contract.findMany({
-      where: whereClause,
+      where: accessWhere,
       include: {
-        owner: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
+        tenant: { include: { user: true } },
+        owner: { include: { user: true } },
         property: true,
-        rental: {
-          include: {
-            property: true,
-          },
-        },
-        tenant: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
-        manager: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
-        invoices: true,
+        rental: { include: { property: true } },
         _count: {
-          select: { invoices: true },
-        },
+          select: {
+            invoices: true,
+          }
+        }
       },
+      orderBy: { createdAt: 'desc' }
     });
   }
 
-  async findOne(id: number, user?: JwtPayload): Promise<Contract> {
-    const contract = await this.prisma.contract.findUnique({
-      where: { id },
+
+  async findOne(id: number, user: RequestUser) {
+    const accessWhere = await this.buildAccessWhere(user, id);
+    if (!accessWhere) throw new NotFoundException('Contrat introuvable');
+
+    const contract = await this.prisma.contract.findFirst({
+      where: accessWhere,
       include: {
-        owner: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
+        tenant: { include: { user: true } },
+        owner: { include: { user: true } },
         property: true,
-        rental: {
-          include: {
-            property: true,
-          },
-        },
-        tenant: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
-        manager: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              },
-            },
-          },
-        },
-        invoices: {
-          orderBy: { dueDate: 'desc' },
-          include: { transactions: true },
-        },
+        rental: { include: { property: true } },
+        invoices: { orderBy: { dueDate: 'desc' }, take: 5 },
         _count: {
           select: { invoices: true },
         },
       },
     });
-
-    if (!contract) {
-      throw new NotFoundException(`Contract with ID ${id} not found.`);
-    }
-
-    // Check permissions if user is provided
-    if (user) {
-      await this.checkContractPermission(contract, user);
-    }
-
+    if (!contract) throw new NotFoundException('Contrat introuvable');
     return contract;
   }
 
-  async update(
-    id: number,
-    updateContractDto: UpdateContractDto,
-    user: JwtPayload,
-  ): Promise<Contract> {
-    // RBAC Check: Only ADMIN and MANAGER can update contracts
-    if (user.role !== UserRole.ADMIN && user.role !== UserRole.MANAGER) {
-      throw new ForbiddenException(
-        'Only administrators and property managers can update contracts.',
-      );
-    }
 
-    // First check if contract exists and user has permission
-    const contract = await this.findOne(id, user);
+  async update(id: number, orgId: number, dto: UpdateContractDto) {
+    await this.findOneForOrganization(id, orgId); // Check existence
 
-    // For MANAGER role, ensure they manage this contract's property
-    if (user.role === UserRole.MANAGER) {
-      const managerProfile = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
-      });
-
-      if (
-        !managerProfile ||
-        (contract as any).property.managerId !== managerProfile.id
-      ) {
-        throw new ForbiddenException(
-          `You are not authorized to manage this contract.`,
-        );
-      }
-    }
-
-    // Additional validation for status changes
-    if (
-      updateContractDto.status === ContractStatus.TERMINATED ||
-      updateContractDto.status === ContractStatus.EXPIRED
-    ) {
-      // Update rental status back to AVAILABLE when contract ends
-      await this.prisma.rental.update({
-        where: { id: contract.rentalId },
-        data: { status: RentalStatus.AVAILABLE },
-      });
-    }
-
-    // Note: Relationship fields (ownerId, propertyId, rentalId, tenantId, managerId)
-    // are not allowed to be updated via this endpoint as per UpdateContractDto design
-    try {
-      return await this.prisma.contract.update({
-        where: { id },
-        data: updateContractDto,
-        include: {
-          owner: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          },
-          property: true,
-          rental: {
-            include: {
-              property: true,
-            },
-          },
-          tenant: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          },
-          manager: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          },
-          invoices: true,
-        },
-      });
-    } catch (error) {
-      console.error('Error updating contract:', error);
-      throw new InternalServerErrorException('Could not update contract.');
-    }
-  }
-
-  async terminate(id: number, user: JwtPayload): Promise<Contract> {
-    // RBAC Check: Only ADMIN and MANAGER can terminate contracts
-    if (user.role !== UserRole.ADMIN && user.role !== UserRole.MANAGER) {
-      throw new ForbiddenException(
-        'Only administrators and property managers can terminate contracts.',
-      );
-    }
-
-    // Find the contract with necessary relations
-    const contract = await this.prisma.contract.findUnique({
+    return this.prisma.contract.update({
       where: { id },
-      include: {
-        rental: true,
-        property: true,
-        manager: true,
+      data: {
+        // On permet de modifier les montants ou dates
+        rentAmount: dto.rentAmount,
+        chargesAmount: dto.chargesAmount,
+        endDate: dto.endDate ? new Date(dto.endDate) : undefined,
+        status: dto.status,
       },
     });
+  }
 
-    if (!contract) {
-      throw new NotFoundException(`Contract with ID ${id} not found.`);
-    }
+  async terminate(id: number, orgId: number) {
 
-    // For MANAGER role, ensure they manage this contract's property
-    if (user.role === UserRole.MANAGER) {
-      const managerProfile = await this.prisma.manager.findUnique({
-        where: { userId: user.sub },
-      });
-
-      if (
-        !managerProfile ||
-        (contract as any).property.managerId !== managerProfile.id
-      ) {
-        throw new ForbiddenException(
-          `You are not authorized to terminate this contract.`,
-        );
-      }
-    }
+    const contract = await this.findOneForOrganization(id, orgId);
 
     // Check if contract is already terminated or expired
     if (contract.status === ContractStatus.TERMINATED) {
-      throw new ConflictException('Contract is already terminated.');
+      throw new ConflictException('Le contrat est déjà résilié.');
     }
 
     if (contract.status === ContractStatus.EXPIRED) {
-      throw new ConflictException('Cannot terminate an expired contract.');
+      throw new ConflictException('Impossible de résilier un contrat expiré.');
     }
 
     try {
-      // Update contract status to TERMINATED and set end date to now
       const terminatedContract = await this.prisma.contract.update({
         where: { id },
         data: {
           status: ContractStatus.TERMINATED,
-          endDate: new Date(), // Set termination date
-        },
-        include: {
-          owner: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          },
-          property: true,
-          rental: {
-            include: {
-              property: true,
-            },
-          },
-          tenant: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          },
-          manager: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                },
-              },
-            },
-          },
-          invoices: {
-            orderBy: { dueDate: 'desc' },
-            include: { transactions: true },
-          },
+          endDate: new Date(), // Date de fin = aujourd'hui
         },
       });
-
       // Update rental status back to AVAILABLE (unless it was BOOKED)
       if (contract.rental.status === RentalStatus.OCCUPIED) {
         await this.prisma.rental.update({
@@ -729,88 +424,150 @@ export class ContractsService {
 
       return terminatedContract;
     } catch (error) {
-      console.error('Error terminating contract:', error);
-      throw new InternalServerErrorException('Could not terminate contract.');
+      console.error(error);
+      throw new InternalServerErrorException("Erreur résiliation contrat");
     }
   }
 
-  async remove(id: number, user: JwtPayload): Promise<Contract> {
-    // RBAC Check: Only ADMIN can delete contracts
-    if (user.role !== UserRole.ADMIN) {
-      throw new ForbiddenException('Only administrators can delete contracts.');
+  async remove(id: number, orgId: number) {
+    const contract = await this.findOneForOrganization(id, orgId);
+
+    // Restriction: suppression réelle interdite pour assurer la traçabilité.
+    // On applique un soft delete : le contrat passe en TERMINATED, avec horodatage fin.
+    if (contract.status === ContractStatus.TERMINATED) {
+      throw new ConflictException('Le contrat est déjà résilié/supprimé.');
+    }
+    if (contract.status === ContractStatus.EXPIRED) {
+      throw new ConflictException("Impossible de supprimer un contrat expiré.");
     }
 
-    // First check if contract exists
-    const contract = await this.findOne(id, user);
-
-    // If any payment transaction exists for this contract's invoices, block deletion (audit integrity)
-    const txCount = await this.prisma.paymentTransaction.count({
-      where: { invoice: { contractId: id } },
+    // Nouvelle règle : interdiction de supprimer si des factures existent pour ce contrat
+    const relatedInvoicesCount = await this.prisma.invoice.count({
+      where: {
+        contractId: contract.id,
+      },
     });
-    if (txCount > 0) {
-      throw new ForbiddenException(
-        'Cannot delete contract with existing payment transactions.',
+    if (relatedInvoicesCount > 0) {
+      throw new ConflictException(
+        "Impossible de supprimer ce contrat : des factures y sont associées."
       );
     }
 
     try {
-      // Delete invoices first (FK constraint), then the contract
-      await this.prisma.$transaction(async (tx) => {
-        await tx.invoice.deleteMany({ where: { contractId: id } });
+      const terminatedContract = await this.prisma.contract.update({
+        where: { id },
+        data: {
+          status: ContractStatus.TERMINATED,
+          endDate: new Date(),
+        },
+      });
 
-        await tx.contract.delete({ where: { id } });
-
-        // Update rental status back to AVAILABLE
-        await tx.rental.update({
+      // Libérer l'unité locative si besoin
+      if (contract.rental?.status === RentalStatus.OCCUPIED) {
+        await this.prisma.rental.update({
           where: { id: contract.rentalId },
           data: { status: RentalStatus.AVAILABLE },
         });
-      });
+      }
 
-      // Return the previously-loaded contract snapshot
-      return contract;
+      return { message: "Contrat résilié avec succès." }; 
     } catch (error) {
-      console.error('Error deleting contract:', error);
-      throw new InternalServerErrorException('Could not delete contract.');
+      console.error(error);
+      throw new InternalServerErrorException("Erreur lors de la suppression (résiliation) du contrat");
     }
   }
 
-  // Helper method to check contract permissions
-  private async checkContractPermission(
-    contract: any,
-    user: JwtPayload,
-  ): Promise<void> {
-    const ownerProfile =
-      user.role === UserRole.OWNER
-        ? await this.prisma.owner.findUnique({ where: { userId: user.sub } })
-        : null;
-    const managerProfile =
-      user.role === UserRole.MANAGER
-        ? await this.prisma.manager.findUnique({ where: { userId: user.sub } })
-        : null;
-    const tenantProfile =
-      user.role === UserRole.TENANT
-        ? await this.prisma.tenant.findUnique({ where: { userId: user.sub } })
-        : null;
 
-    const isOwnerOfContract =
-      ownerProfile && contract.ownerId === ownerProfile.id;
-    const isManagerOfProperty =
-      managerProfile && contract.property.managerId === managerProfile.id;
-    const isTenantOfContract =
-      tenantProfile && contract.tenantId === tenantProfile.id;
 
-    if (
-      user.role === UserRole.ADMIN ||
-      isOwnerOfContract ||
-      isManagerOfProperty ||
-      isTenantOfContract
-    ) {
-      return; // Has permission
+  /**
+ * Génère une référence unique de type BAIL-YYYY-0001
+ * Doit être exécutée à l'intérieur d'une transaction Prisma
+ */
+  /**
+   * Génère une référence unique de type BAIL-YYYY-0001
+   * Prend en compte la séquence max réelle et peut être utilisée en retry si P2002.
+   */
+  private async generateContractReference(
+    tx: any, // 'any' temporaire, ou utilise le type Prisma.TransactionClient si tu l'as importé
+    organizationId: number,
+  ): Promise<string> {
+    const year = new Date().getFullYear().toString();
+    const prefix = `BAIL-${year}-`;
+
+    // On cherche toutes les références du pattern pour cette org/année
+    const contracts = await tx.contract.findMany({
+      where: {
+        organizationId,
+        reference: {
+          startsWith: prefix,
+        },
+      },
+      select: { reference: true },
+    });
+
+    // Trouver la séquence max dans les références existantes BAIL-YYYY-000X
+    let maxSeq = 0;
+    for (const c of contracts) {
+      const ref = c.reference;
+      const m = ref.match(/^BAIL-\d{4}-(\d{4})$/);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
     }
 
-    throw new ForbiddenException(
-      'You do not have permission to access this contract.',
-    );
+    const nextSequence = maxSeq + 1;
+    const sequenceStr = nextSequence.toString().padStart(4, '0');
+    return `${prefix}${sequenceStr}`;
+  }
+
+  private async buildAccessWhere(
+    user: RequestUser,
+    id?: number,
+  ): Promise<Prisma.ContractWhereInput | null> {
+    const baseWhere: Prisma.ContractWhereInput = {
+      organizationId: user.organizationId,
+      ...(id ? { id } : {}),
+    };
+
+    if (user.role === UserRole.ADMIN) {
+      return baseWhere;
+    }
+
+    if (user.role === UserRole.TENANT) {
+      const tenantProfile = await this.prisma.tenant.findUnique({
+        where: { userId: user.id },
+        select: { id: true },
+      });
+
+      if (!tenantProfile) return null;
+
+      return {
+        ...baseWhere,
+        tenantId: tenantProfile.id,
+      };
+    }
+
+    return null;
+  }
+
+  private async findOneForOrganization(id: number, orgId: number) {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id, organizationId: orgId },
+      include: {
+        tenant: { include: { user: true } },
+        owner: { include: { user: true } },
+        rental: { include: { property: true } },
+        invoices: { orderBy: { dueDate: 'desc' }, take: 5 },
+        _count: {
+          select: { invoices: true },
+        },
+      },
+    });
+
+    if (!contract) throw new NotFoundException('Contrat introuvable');
+    return contract;
   }
 }

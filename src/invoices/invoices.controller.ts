@@ -14,7 +14,7 @@ import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
 
 @Controller('invoices')
 export class InvoicesController {
@@ -24,14 +24,14 @@ export class InvoicesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   create(
     @Body() createInvoiceDto: CreateInvoiceDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.invoicesService.create(createInvoiceDto, user);
   }
 
   @Get()
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OWNER, UserRole.TENANT)
-  findAll(@GetCurrentUser() user: JwtPayload) {
+  findAll(@GetCurrentUser() user: RequestUser) {
     return this.invoicesService.findAll(user);
   }
 
@@ -39,7 +39,7 @@ export class InvoicesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.OWNER, UserRole.TENANT)
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.invoicesService.findOne(id, user);
   }
@@ -49,7 +49,7 @@ export class InvoicesController {
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateInvoiceDto: UpdateInvoiceDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.invoicesService.update(id, updateInvoiceDto, user);
   }
@@ -58,7 +58,7 @@ export class InvoicesController {
   @Roles(UserRole.ADMIN, UserRole.MANAGER)
   remove(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
     return this.invoicesService.remove(id, user);
   }

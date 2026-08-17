@@ -7,16 +7,15 @@ import {
   Param,
   Delete,
   ParseIntPipe,
-  UseGuards,
 } from '@nestjs/common';
 import { TenantsService } from './tenants.service';
 import { CreateTenantDto } from './dto/create-tenant.dto';
 import { UpdateTenantDto } from './dto/update-tenant.dto';
-import { UpdateStatusDto } from '../common/dto/update-status.dto'; // Import du DTO commun
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
-import { JwtPayload } from '../auth/types';
+import { RequestUser } from '../auth/types';
+import { UpdateStatusDto } from '@/common/dto/update-status.dto';
 
 @Controller('tenants')
 export class TenantsController {
@@ -24,35 +23,37 @@ export class TenantsController {
 
   @Post()
   @Roles(UserRole.ADMIN)
-  create(@Body() createTenantDto: CreateTenantDto) {
-    return this.tenantsService.create(createTenantDto);
+  create(
+    @Body() createTenantDto: CreateTenantDto,
+    @GetCurrentUser() user: RequestUser,
+  ) {
+    // On passe l'ID admin pour vérifier l'org et lier le locataire
+    return this.tenantsService.create(user.id, createTenantDto);
   }
 
   @Get()
   @Roles(UserRole.ADMIN)
-  findAll() {
-    return this.tenantsService.findAll();
+  findAll(@GetCurrentUser() user: RequestUser) {
+    return this.tenantsService.findAll(user.organizationId);
   }
 
   @Get(':id')
-  @Roles(UserRole.ADMIN, UserRole.TENANT) // Admin ou le locataire lui-même
+  @Roles(UserRole.ADMIN, UserRole.TENANT)
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
-    // Le service vérifiera si le locataire tente de voir le profil d'un autre
-    return this.tenantsService.findOne(id, user);
+    return this.tenantsService.findOne(id, user.organizationId);
   }
 
   @Patch(':id')
-  @Roles(UserRole.ADMIN, UserRole.TENANT) // Admin ou le locataire lui-même
+  @Roles(UserRole.ADMIN, UserRole.TENANT)
   update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateTenantDto: UpdateTenantDto,
-    @GetCurrentUser() user: JwtPayload,
+    @GetCurrentUser() user: RequestUser,
   ) {
-    // Le service vérifiera les droits
-    return this.tenantsService.update(id, updateTenantDto, user);
+    return this.tenantsService.update(id, user.organizationId, updateTenantDto);
   }
 
   @Patch(':id/status')
@@ -66,7 +67,10 @@ export class TenantsController {
 
   @Delete(':id')
   @Roles(UserRole.ADMIN)
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.tenantsService.remove(id);
+  remove(
+    @Param('id', ParseIntPipe) id: number,
+    @GetCurrentUser() user: RequestUser,
+  ) {
+    return this.tenantsService.remove(id, user.organizationId);
   }
 }

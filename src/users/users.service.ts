@@ -36,8 +36,10 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
+        organization: {
+          include: { plan: true } // Inclure aussi le plan de l'organisation
+        },
         ownerProfile: true,
-        managerProfile: true,
         tenantProfile: true,
       },
     });

@@ -4,8 +4,17 @@ import {
   IsNotEmpty,
   MinLength,
   IsOptional,
+  IsEnum,
+  Matches,
 } from 'class-validator';
 
+// Les slugs disponibles tels que définis dans ton seed
+export enum PlanSlug {
+  BASIC = 'basic',
+  STANDARD = 'standard',
+  PRO = 'pro',
+  PREMIUM = 'premium',
+}
 export class RegisterDto {
   @IsEmail()
   @IsNotEmpty()
@@ -25,6 +34,17 @@ export class RegisterDto {
   lastName: string;
 
   @IsString()
+  @IsNotEmpty()
+  @Matches(/^\+[1-9]\d{7,14}$/, {
+    message: 'phone must be a valid international phone number.',
+  })
+  phone: string;
+
+  @IsString()
+  @IsNotEmpty()
+  companyName: string; // Nom de l'organisation
+
   @IsOptional()
-  phoneNumber?: string;
+  @IsEnum(PlanSlug)
+  planSlug: PlanSlug = PlanSlug.BASIC;
 }

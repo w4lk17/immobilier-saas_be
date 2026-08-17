@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "rentals" ADD COLUMN     "isFurnished" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "surface" DOUBLE PRECISION NOT NULL DEFAULT 0;
