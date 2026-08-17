@@ -644,8 +644,8 @@ async function main() {
   if (owner1Profile && tenant1Profile) {
     const contract1 = await prisma.contract.create({
       data: {
-        designation: 'Appartement 2 pièces Adidogbé',
-        address: 'Rue des Manguiers, Adidogbé',
+        propertyId:1,
+        rentalId:1,
         rentAmount: 50000,
         depositAmount: 100000,
         rentDeposit: 2,

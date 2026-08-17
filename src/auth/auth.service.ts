@@ -264,7 +264,6 @@ export class AuthService {
     await this._updateRefreshTokenHash(user.id, tokens.refreshToken);
 
     this._setCookies(response, tokens);
-    // console.log(`Tokens refreshed for user ${userId}`);
   }
 
   async logout(userId: number | null, response: Response) {
