@@ -125,6 +125,17 @@ enum ExpenseStatus {
   CANCELED
 }
 
+enum NotificationType {
+  INVOICE_GENERATED           // Facture générée
+  INVOICE_PAID                // Facture payée
+  INVOICE_OVERDUE             // Facture en retard
+  INVOICE_EXPIRED             // Facture expirée
+  INVOICE_CANCELLED           // Facture annulée
+  INVOICE_SENT                // Facture envoyée
+  WELCOME                     // Bienvenue après inscription
+  SYSTEM                      // Notification système générale
+}
+
 // ==========================================
 // SAAS CORE
 // ==========================================
@@ -163,12 +174,13 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   // Relations
-  users         User[]
-  contracts     Contract[]
-  properties    Property[]
-  invoices      Invoice[]
-  expenses      Expense[]
-  notifications Notification[]
+  users                    User[]
+  contracts                Contract[]
+  properties               Property[]
+  invoices                 Invoice[]
+  expenses                 Expense[]
+  notifications            Notification[]
+  invoiceGenerationHistory InvoiceGenerationHistory[]
 
   @@map("organizations")
 }
@@ -214,8 +226,8 @@ model User {
 
   // --- RELATIONS ---
   organizationId Int
-  organization   Organization @relation(fields: [organizationId], references: [id])
-
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  notifications  Notification[]
   // Profils
   ownerProfile   Owner?
   managerProfile Manager?
@@ -282,7 +294,7 @@ model Property {
   description   String?        @db.Text
   type          PropertyType
   propertyValue Float?
-  rentalUnits   Int @default(1)
+  rentalUnits   Int            @default(1)
   status        PropertyStatus @default(AVAILABLE)
 
   isForSale    Boolean  @default(false)
@@ -363,11 +375,11 @@ model Contract {
   organization   Organization @relation(fields: [organizationId], references: [id])
   // -----------------------------------
 
-  owner    Owner     @relation(fields: [ownerId], references: [id])
+  owner    Owner    @relation(fields: [ownerId], references: [id])
   property Property @relation(fields: [propertyId], references: [id])
   rental   Rental   @relation(fields: [rentalId], references: [id])
-  tenant   Tenant    @relation(fields: [tenantId], references: [id])
-  manager  Manager?  @relation("ContractManager", fields: [managerId], references: [id])
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  manager  Manager? @relation("ContractManager", fields: [managerId], references: [id])
 
   invoices Invoice[]
 
@@ -380,22 +392,22 @@ model Contract {
 // ==========================================
 
 model Invoice {
-  id            Int           @id @default(autoincrement())
-  invoiceNumber String        @unique
-  contractId    Int
-  tenantId      Int
-  amountDue     Float
-  paidAmount    Float         @default(0)
-  type          InvoiceType
-  status        InvoiceStatus @default(PENDING)
-  dueDate       DateTime
-  paidDate      DateTime?
+  id             Int           @id @default(autoincrement())
+  invoiceNumber  String        @unique
+  contractId     Int
+  tenantId       Int
+  amountDue      Float
+  paidAmount     Float         @default(0)
+  type           InvoiceType
+  status         InvoiceStatus @default(PENDING)
+  dueDate        DateTime
+  paidDate       DateTime?
   organizationId Int
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   // --- NOUVEAU : Lien Organisation ---
-  organization   Organization @relation(fields: [organizationId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
   // -----------------------------------
 
   contract     Contract             @relation(fields: [contractId], references: [id])
@@ -440,29 +452,45 @@ model Expense {
   // -----------------------------------
 
   property   Property @relation(fields: [propertyId], references: [id])
-  rental     Rental?   @relation(fields: [rentalId], references: [id])
-  recordedBy User      @relation("UserExpenses", fields: [recordedById], references: [id])
+  rental     Rental?  @relation(fields: [rentalId], references: [id])
+  recordedBy User     @relation("UserExpenses", fields: [recordedById], references: [id])
 
   @@map("expenses")
 }
 
 // ==========================================
-// NOTIFICATIONS
+// NOTIFICATIONS IN APP 
 // ==========================================
 
 model Notification {
-  id             Int       @id @default(autoincrement())
+  id             Int              @id @default(autoincrement())
   organizationId Int
-  userId         Int?
-  type           String // "EMAIL", "SMS", "IN_APP"
-  title          String
-  message        String    @db.Text
-  isRead         Boolean   @default(false)
-  status         String    @default("PENDING") // PENDING, SENT, FAILED
-  sentAt         DateTime?
-  createdAt      DateTime  @default(now())
+  userId         Int
+  type           NotificationType @default(SYSTEM)
+  title          String // Titre court de la notification
+  message        String // Message détaillé
+  link           String? // Lien interne (ex: /invoices/xxx)
+  read           Boolean          @default(false) // Notification lue ?
+  createdAt      DateTime         @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id])
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+// ==========================================
+// INVOICE GENERATION HISTORY
+// ==========================================
+model InvoiceGenerationHistory {
+  id             Int          @id @default(autoincrement())
+  organizationId Int
+  periodStart    DateTime
+  periodEnd      DateTime
+  status         String // SUCCESS, FAILED
+  details        String? // log, erreur éventuelle
+  generatedAt    DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("invoice_generation_history")
 }

@@ -146,8 +146,8 @@ export class CreateContractDto {
 
   @IsNumber()
   @IsOptional()
-  @Max(3)
-  rentAdvance?: number; // Nombre de mois d'avance (ex: 1er mois payé à l'avance)
+  @Min(3)
+  rentAdvance?: number; 
 
   @IsNumber()
   @IsOptional()

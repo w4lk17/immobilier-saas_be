@@ -45,6 +45,8 @@ export interface LeasePdfPayload {
 
 function makeInvoiceNumber(prefix = 'INV'): string {
   const ymd = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+  // function makeInvoiceNumber(periodDate: Date, prefix = 'INV'): string {
+  //   const ymd = periodDate.toISOString().slice(0, 10).replaceAll('-', '');
   const rand = Math.floor(Math.random() * 1_000_000)
     .toString()
     .padStart(6, '0');
@@ -470,7 +472,7 @@ export class ContractsService {
         });
       }
 
-      return { message: "Contrat résilié avec succès." }; 
+      return { message: "Contrat résilié avec succès." };
     } catch (error) {
       console.error(error);
       throw new InternalServerErrorException("Erreur lors de la suppression (résiliation) du contrat");
