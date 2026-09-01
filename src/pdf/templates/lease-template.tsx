@@ -1,6 +1,6 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
-import { LeasePdfPayload } from '@/contracts/contracts.service';
+import { LeasePdfPayload } from '../../contracts/contracts.service';
 
 // 1. Définition des styles (Uniquement du Flexbox et des propriétés basiques)
 const styles = StyleSheet.create({
