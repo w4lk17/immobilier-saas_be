@@ -155,7 +155,7 @@ model Plan {
 
 model Organization {
   id               Int     @id @default(autoincrement())
-  name             String // Nom de l'agence ou du propriétaire
+  name             String // Nom de l'agence ou du propriÃƒÂ©taire
   email            String  @unique
   phone            String? @unique
   isEmailVerified  Boolean @default(false)
@@ -198,7 +198,11 @@ model User {
   // Champs Communs
   firstName   String
   lastName    String
-  phoneNumber String?
+  phoneNumber String? @unique
+  isPhoneVerified Boolean @default(false)
+  phoneVerifyCode String?
+  phoneVerifyExpiresAt DateTime?
+  phoneOtpLastSentAt DateTime?
   civility    String?
   dateOfBirth DateTime?
   address     String?
@@ -468,7 +472,7 @@ model Notification {
   userId         Int
   type           NotificationType @default(SYSTEM)
   title          String // Titre court de la notification
-  message        String // Message détaillé
+  message        String // Message dÃƒÂ©taillÃƒÂ©
   link           String? // Lien interne (ex: /invoices/xxx)
   read           Boolean          @default(false) // Notification lue ?
   createdAt      DateTime         @default(now())
@@ -488,9 +492,11 @@ model InvoiceGenerationHistory {
   periodStart    DateTime
   periodEnd      DateTime
   status         String // SUCCESS, FAILED
-  details        String? // log, erreur éventuelle
+  details        String? // log, erreur ÃƒÂ©ventuelle
   generatedAt    DateTime     @default(now())
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   @@map("invoice_generation_history")
 }
+
+

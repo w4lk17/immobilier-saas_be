@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   ConflictException,
@@ -13,7 +13,7 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   // Function to securely select user data (exclude sensitive fields)
   private excludeSensitiveData(
@@ -24,14 +24,18 @@ export class UsersService {
     return result;
   }
 
-  // Utilisé par AuthService.validateUser (doit retourner le password pour vérification)
+  // Utilisé par AuthService.validateUser (doit impérativement retourner le mot de passe pour vérification)
   async findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
+  async findByPhoneNumber(phoneNumber: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { phoneNumber } });
+  }
+
   // --- Routes pour l'utilisateur connecté (ME) ---
 
-  // Récupérer l'utilisateur courant (avec son profil spécifique si besoin)
+  // Récupérer l'utilisateur courant (inclut son profil propriétaire et locataire si applicable, ainsi que le plan de son organisation)
   async getMe(userId: number) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -43,14 +47,14 @@ export class UsersService {
         tenantProfile: true,
       },
     });
-    if (!user) throw new NotFoundException('Utilisateur non trouvé');
+    if (!user) throw new NotFoundException('Utilisateur non trouvÃ©');
 
-    // Nettoyage des données sensibles
+    // Nettoyage des donnÃ©es sensibles
     const { password, refreshToken, ...result } = user;
     return result;
   }
 
-  // Mise à jour de ses propres infos (User de base)
+  // Mise Ã  jour de ses propres infos (User de base)
   async updateMe(userId: number, dto: UpdateUserDto) {
     // On nettoie le DTO pour s'assurer qu'on ne change pas le role ou le password ici
     const data = { ...dto };
@@ -66,7 +70,7 @@ export class UsersService {
         firstName: true,
         lastName: true,
         role: true,
-      }, // Sécurité
+      }, // Sécurité : on ne retourne que les champs de base de l'utilisateur mis à jour 
     });
   }
 
@@ -88,7 +92,7 @@ export class UsersService {
       data: { password: hashedPassword },
     });
 
-    return { message: 'Mot de passe mis à jour' };
+    return { message: 'Mot de passe mis à jour.' };
   }
 
   // -------Admin function---------//
@@ -124,25 +128,32 @@ export class UsersService {
       });
       return this.excludeSensitiveData(updatedUser);
     } catch (error) {
-      // Handle Prisma errors (e.g., P2025 Record not found)
-      if (error.code === 'P2025')
-        throw new NotFoundException(`User with ID "${id}" not found.`);
-      // Unique constraint violation (e.g., email)
-      if (error.code === 'P2002')
-        throw new ConflictException('Email already exists.');
-      throw new InternalServerErrorException('Could not update user.');
+      // Gestion des erreurs Prisma (ex : P2025, enregistrement introuvable)
+      if (typeof error === 'object' && error !== null && 'code' in error) {
+        if ((error as any).code === 'P2025') {
+          throw new NotFoundException(`Utilisateur avec cet ID introuvable.`);
+        }
+        // Violation de contrainte d'unicité (ex: email déjà utilisé)
+        if ((error as any).code === 'P2002') {
+          throw new ConflictException("Cet email existe déjà.");
+        }
+      }
+      throw new InternalServerErrorException("Impossible de mettre à jour l'utilisateur.");
     }
   }
 
   async updateStatus(id: number, isActive: boolean): Promise<User> {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
-      throw new NotFoundException(`User with ID "${id}" not found.`);
+      throw new NotFoundException(`Utilisateur avec l'identifiant "${id}" introuvable.`);
     }
 
     return this.prisma.user.update({
       where: { id },
-      data: { isActive },
+      data: {
+        isActive,
+        ...(isActive === false ? { refreshToken: null } : {}),
+      },
     });
   }
 
@@ -151,9 +162,9 @@ export class UsersService {
       const deletedUser = await this.prisma.user.delete({ where: { id } });
       return this.excludeSensitiveData(deletedUser);
     } catch (error) {
-      if (error.code === 'P2025')
-        throw new NotFoundException(`User with ID "${id}" not found.`);
-      throw new InternalServerErrorException('Could not delete user.');
+      if (typeof error === 'object' && error !== null && 'code' in error)
+        throw new NotFoundException(`Utilisateur avec l'identifiant "${id}" introuvable.`);
+      throw new InternalServerErrorException("Impossible de supprimer l'utilisateur.");
     }
   }
   // Utilisé par AuthService pour sauvegarder le Refresh Token
@@ -172,7 +183,9 @@ export class UsersService {
         `Failed to update refresh token for user ${userId}:`,
         error,
       );
-      throw new InternalServerErrorException('Could not update token');
+      throw new InternalServerErrorException("Impossible de mettre à jour le token.");
+
     }
   }
 }
+

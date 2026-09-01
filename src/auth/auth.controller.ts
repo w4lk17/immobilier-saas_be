@@ -44,10 +44,12 @@ export class AuthController {
   @Public()
   @Post('verify-phone')
   @HttpCode(HttpStatus.OK)
-  async verifyPhone(@Body() dto: VerifyPhoneDto) {
-    return this.authService.verifyPhone(dto.phone, dto.code);
+  async verifyPhone(
+    @Body() dto: VerifyPhoneDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.authService.verifyPhone(dto.phone, dto.code, response);
   }
-
   @Public()
   @Post('resend-otp')
   @HttpCode(HttpStatus.OK)
