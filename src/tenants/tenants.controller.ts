@@ -15,7 +15,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
 import { RequestUser } from '../auth/types';
-import { UpdateStatusDto } from '@/common/dto/update-status.dto';
+import { UpdateStatusDto } from '../common/dto/update-status.dto';
 
 @Controller('tenants')
 export class TenantsController {
