@@ -1,12 +1,11 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
-
+﻿import { IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
 export class LoginDto {
-  @IsEmail()
-  @IsNotEmpty()
-  email: string;
-
   @IsString()
   @IsNotEmpty()
-  @MinLength(6) // Match your password policy
+  @Matches(/^\+[1-9]\d{7,14}$/, { message: 'phone must be a valid international phone number.' })
+  phone: string;
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(6)
   password: string;
 }

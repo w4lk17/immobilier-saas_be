@@ -18,31 +18,31 @@ export enum PlanSlug {
 export class RegisterDto {
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @IsString()
   @IsNotEmpty()
   @MinLength(6)
-  password: string;
+  password!: string;
 
   @IsString()
   @IsNotEmpty()
-  firstName: string;
+  firstName!: string;
 
   @IsString()
   @IsNotEmpty()
-  lastName: string;
+  lastName!: string;
 
   @IsString()
   @IsNotEmpty()
   @Matches(/^\+[1-9]\d{7,14}$/, {
     message: 'phone must be a valid international phone number.',
   })
-  phone: string;
+  phone!: string;
 
   @IsString()
   @IsNotEmpty()
-  companyName: string; // Nom de l'organisation
+  companyName!: string; // Nom de l'organisation
 
   @IsOptional()
   @IsEnum(PlanSlug)

@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { JwtPayload, RequestUser } from '../types';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ACCOUNT_DISABLED_ERROR } from '../constants/auth-errors';
 
 const cookieExtractor = (req: Request): string | null => {
   let token: string | null = null;
@@ -49,12 +50,11 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
 
     if (!user) {
-      // console.log(`JwtStrategy: User ${payload.sub} not found.`);
       throw new UnauthorizedException('User not found or invalid token');
     }
 
-    if(!user.isActive){
-      throw new UnauthorizedException('Compte désactivé');
+    if (!user.isActive) {
+      throw new UnauthorizedException(ACCOUNT_DISABLED_ERROR);
     }
 
     // On retourne un objet propre.

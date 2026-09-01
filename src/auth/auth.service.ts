@@ -18,6 +18,7 @@ import { RegisterDto } from './dto/register.dto';
 import { Response } from 'express';
 import { SmsService } from '../sms/sms.service';
 import { EmailService } from '../email/email.service';
+import { ACCOUNT_DISABLED_ERROR } from './constants/auth-errors';
 
 @Injectable()
 export class AuthService {
@@ -31,15 +32,27 @@ export class AuthService {
     private configService: ConfigService,
     private smsService: SmsService,
     private emailService: EmailService,
-  ) {}
+  ) { }
 
-  async validateUser(email: string, pass: string): Promise<User | null> {
-    const user = await this.usersService.findByEmail(email);
+  async validateUser(phone: string, pass: string): Promise<User | null> {
+    const user = await this.usersService.findByPhoneNumber(phone);
+    if (!user) return null;
 
-    if (user && (await bcrypt.compare(pass, user.password))) {
-      return user;
+    const isPasswordValid = await bcrypt.compare(pass, user.password);
+    if (!isPasswordValid) return null;
+
+    if (!user.isPhoneVerified) {
+      throw new ForbiddenException({
+        message: 'Téléphone non vérifié.',
+        code: 'PHONE_NOT_VERIFIED',
+      });
     }
-    return null;
+
+    if (!user.isActive) {
+      throw new ForbiddenException(ACCOUNT_DISABLED_ERROR);
+    }
+
+    return user;
   }
 
   async register(dto: RegisterDto) {
@@ -84,7 +97,6 @@ export class AuthService {
           planId: plan.id,
           subscriptionStatus: SubscriptionStatus.TRIAL,
           trialEndsAt,
-          phoneVerifyCode,
         },
       });
 
@@ -95,6 +107,10 @@ export class AuthService {
           firstName: dto.firstName,
           lastName: dto.lastName,
           phoneNumber: dto.phone,
+          isPhoneVerified: false,
+          phoneVerifyCode: await bcrypt.hash(phoneVerifyCode, 10),
+          phoneVerifyExpiresAt: new Date(Date.now() + this.otpTtlMs),
+          phoneOtpLastSentAt: new Date(),
           role: UserRole.ADMIN,
           organizationId: organization.id,
           isActive: true,
@@ -116,82 +132,90 @@ export class AuthService {
         error instanceof Error ? error.stack : String(error),
       );
       throw new InternalServerErrorException(
-        "Inscription creee, mais l'envoi du code OTP a echoue. Veuillez demander un nouveau code.",
+        "Votre compte a été créé, mais l'envoi du code OTP a échoué. Veuillez réessayer l'envoi du code ou contacter le support si le problème persiste.",
       );
     }
 
     const { password, ...userWithoutPassword } = result.user;
     return {
       message:
-        'Inscription réussie. Veuillez vérifier votre compte avec le code OTP envoyé.',
-   
+        "Inscription réussie. Veuillez vérifier votre compte avec le code OTP envoyé.",
       user: userWithoutPassword,
       organization: result.organization,
     };
   }
 
-  async verifyPhone(phone: string, code: string) {
-    const organization = await this.prisma.organization.findUnique({
-      where: { phone },
-    });
+  async verifyPhone(phone: string, code: string, response: Response) {
+    const user = await this.usersService.findByPhoneNumber(phone);
 
-    if (!organization) {
-      throw new NotFoundException('Numero de telephone introuvable.');
+    if (!user) {
+      throw new NotFoundException('Numéro de téléphone introuvable.');
+    }
+    if (!user.isActive) {
+      throw new ForbiddenException(ACCOUNT_DISABLED_ERROR);
+    }
+    if (user.isPhoneVerified) {
+      throw new BadRequestException('Numéro de téléphone déjà vérifié. Connectez-vous.');
     }
 
-    if (organization.isPhoneVerified) {
-      return { message: 'Numero de telephone deja verifie.' };
+    if (
+      !user.phoneVerifyCode ||
+      !user.phoneVerifyExpiresAt ||
+      user.phoneVerifyExpiresAt <= new Date() ||
+      !(await bcrypt.compare(code, user.phoneVerifyCode))
+    ) {
+      throw new BadRequestException('Code OTP invalide ou expiré.');
     }
 
-    if (!organization.phoneVerifyCode || organization.phoneVerifyCode !== code) {
-      throw new BadRequestException('Code OTP invalide.');
-    }
-
-    if (this.isOtpExpired(organization.updatedAt)) {
-      throw new BadRequestException(
-        'Code OTP expire. Veuillez demander un nouveau code.',
-      );
-    }
-
-    await this.prisma.organization.update({
-      where: { id: organization.id },
+    const verifiedUser = await this.prisma.user.update({
+      where: { id: user.id },
       data: {
         isPhoneVerified: true,
         phoneVerifyCode: null,
+        phoneVerifyExpiresAt: null,
+        phoneOtpLastSentAt: null,
       },
     });
 
-    return { message: 'Numero de telephone verifie avec succes.' };
+    // Exclure les champs sensibles
+    const { password, refreshToken, ...safeUser } = verifiedUser;
+
+    await this.login(safeUser, response);
+
+    return {
+      message: 'Numéro de téléphone vérifié avec succès.',
+      user: safeUser,
+    };
   }
 
   async resendOtp(phone: string) {
-    const organization = await this.prisma.organization.findUnique({
-      where: { phone },
-      include: { users: { where: { role: UserRole.ADMIN }, take: 1 } },
+    const user = await this.usersService.findByPhoneNumber(phone);
+    if (!user)
+      throw new NotFoundException('Numéro de téléphone introuvable.');
+    if (user.isPhoneVerified)
+      throw new BadRequestException('Numéro de téléphone déjà vérifié.');
+    if (
+      user.phoneOtpLastSentAt &&
+      Date.now() - user.phoneOtpLastSentAt.getTime() < 60_000
+    )
+      throw new BadRequestException(
+        'Veuillez patienter une minute avant de demander un nouveau code.',
+      );
+
+    const otp = this.generateOtp();
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        phoneVerifyCode: await bcrypt.hash(otp, 10),
+        phoneVerifyExpiresAt: new Date(Date.now() + this.otpTtlMs),
+        phoneOtpLastSentAt: new Date(),
+      },
     });
 
-    if (!organization) {
-      throw new NotFoundException('Numero de telephone introuvable.');
-    }
+    await this.smsService.sendOtp(phone, otp);
 
-    if (organization.isPhoneVerified) {
-      return { message: 'Numero de telephone deja verifie.' };
-    }
-
-    const adminUser = organization.users[0];
-    if (!adminUser) {
-      throw new NotFoundException('Utilisateur administrateur introuvable.');
-    }
-
-    const phoneVerifyCode = this.generateOtp();
-    await this.prisma.organization.update({
-      where: { id: organization.id },
-      data: { phoneVerifyCode },
-    });
-
-    await this.sendOtpNotifications(phone, adminUser.email, phoneVerifyCode);
-
-    return { message: 'Un nouveau code OTP a ete envoye.' };
+    return { message: 'Un nouveau code OTP a été envoyé.' };
   }
 
   async verifyEmail(token: string) {
@@ -249,6 +273,10 @@ export class AuthService {
       throw new ForbiddenException(
         'Access Denied: User not found or no refresh token',
       );
+    }
+
+    if (!user.isActive) {
+      throw new ForbiddenException(ACCOUNT_DISABLED_ERROR);
     }
 
     const rtMatches = await bcrypt.compare(rt, user.refreshToken);
@@ -378,15 +406,12 @@ export class AuthService {
 
   private async sendOtpNotifications(
     phone: string,
-    email: string,
+    _email: string,
     otp: string,
   ): Promise<void> {
-    await Promise.all([
-      this.smsService.sendOtp(phone, otp),
-      this.emailService.sendOtpEmail(email, otp),
-    ]);
+    await this.smsService.sendOtp(phone, otp);
   }
-
+  
   private async _updateRefreshTokenHash(
     userId: number,
     rt: string,
@@ -397,7 +422,7 @@ export class AuthService {
       where: { id: userId },
       data: { refreshToken: hash },
     });
-    console.log(`Updated refresh token hash for user ${userId}`);
+    // console.log(`Updated refresh token hash for user ${userId}`);
   }
 
   private _setCookies(response: any, tokens: Tokens): void {
@@ -435,3 +460,4 @@ export class AuthService {
     });
   }
 }
+
