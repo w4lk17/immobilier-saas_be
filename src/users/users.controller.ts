@@ -14,12 +14,12 @@ import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
-import { GetCurrentUser } from '@/auth/decorators/get-current-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { UpdateStatusDto } from '@/common/dto/update-status.dto';
+import { UpdateStatusDto } from '../common/dto/update-status.dto';
+import { GetCurrentUser } from '../auth/decorators/get-current-user.decorator';
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   @Get('me')
   getMyProfile(@GetCurrentUser('id') userId: number) {
