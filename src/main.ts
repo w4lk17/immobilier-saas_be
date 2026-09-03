@@ -11,7 +11,7 @@ async function bootstrap() {
 
   // Enable CORS if needed (configure origin appropriately for production)
   app.enableCors({
-    origin: ['http://localhost:3000'], // Your frontend URL
+    origin: ['http://localhost:3000', 'https://hofeti.vercel.app'], // Your frontend URL
     credentials: true, // Allow cookies to be sent
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     allowedHeaders: 'Content-Type, Accept, Authorization',
